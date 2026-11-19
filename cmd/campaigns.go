@@ -37,6 +37,7 @@ type campReq struct {
 	SubscriberEmails pq.StringArray `json:"subscribers"`
 
 	DenmaVersion int `json:"version"` // denma: the version the save started from (cmd/denma_versions.go)
+	denmaCheck   int // denma: what it's checked for (cmd/denma_drafts.go)
 }
 
 // campContentReq wraps params coming from API requests for converting
@@ -479,6 +480,7 @@ func (a *App) CreateCampaign(c echo.Context) error {
 	if o.Messenger == "" {
 		o.Messenger = "email"
 	}
+	o.denmaCheck = denmaCheckDraft // denma: cmd/denma_drafts.go
 
 	// Validate.
 	if err := a.denmaCheckCampaign(&o, c); err != nil { // denma: cmd/denma_tags.go
@@ -542,7 +544,9 @@ func (a *App) UpdateCampaign(c echo.Context) error {
 
 	// Filter lists against the current user's permitted lists.
 	user := auth.GetUser(c)
+	denmaKeepLists(&o, cm)                                             // denma: cmd/denma_drafts.go
 	o.ListIDs = user.FilterListsByPerm(auth.PermTypeManage, o.ListIDs) // denma: manage permission
+	o.denmaCheck = denmaCheckFor(cm.Status)                            // denma: cmd/denma_drafts.go
 
 	if err := a.denmaCheckCampaign(&o, c); err != nil { // denma: cmd/denma_tags.go
 		return err
@@ -752,6 +756,7 @@ func (a *App) TestCampaign(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
+	req.denmaCheck = denmaCheckTest // denma: cmd/denma_drafts.go
 
 	// Validate.
 	if c, err := a.validateCampaignFields(req); err != nil {
@@ -876,12 +881,13 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		return c, err
 	}
 
+	c.denmaFillDraft() // denma: cmd/denma_drafts.go
 	if !strHasLen(c.Name, 1, stdInputMaxLen) {
 		return c, errors.New(a.i18n.T("campaigns.fieldInvalidName"))
 	}
 
 	// Larger char limit for subject as it can contain {{ go templating }} logic.
-	if !strHasLen(c.Subject, 1, 5000) {
+	if !strHasLen(c.Subject, c.denmaSubjectMin(), 5000) { // denma: cmd/denma_drafts.go
 		return c, errors.New(a.i18n.T("campaigns.fieldInvalidSubject"))
 	}
 
@@ -905,7 +911,7 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		}
 	}
 
-	if len(c.ListIDs) == 0 && len(c.SubscriberTags) == 0 { // denma: or tags (cmd/denma_tags.go)
+	if len(c.ListIDs) == 0 && len(c.SubscriberTags) == 0 && c.denmaNeedsRecipients() { // denma: or tags (cmd/denma_tags.go); cmd/denma_drafts.go
 		return c, errors.New(a.i18n.T("campaigns.fieldInvalidListIDs"))
 	}
 

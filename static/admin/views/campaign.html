@@ -55,8 +55,8 @@
 	{{- if $isNew }}
 		<div role="tablist">
 			<a role="tab" aria-selected="true">{{ Icon "mail" }} {{ .L.Tc "globals.terms.campaign" 1 }}</a>
-			<a role="tab" aria-disabled="true">{{ Icon "file-text" }} {{ .L.T "campaigns.content" }}</a>
-			<a role="tab" aria-disabled="true">{{ Icon "code" }} {{ .L.T "globals.terms.attribs" }}</a>
+			<a role="tab" href="#" data-cy="tab-new-content" @click.prevent="isLoading('campaigns') || onCreate('content')">{{ Icon "file-text" }} {{ .L.T "campaigns.content" }}</a>{{/* denma: saves it as a draft first (cmd/denma_drafts.go) */}}
+			<a role="tab" href="#" @click.prevent="isLoading('campaigns') || onCreate('attribs')">{{ Icon "code" }} {{ .L.T "globals.terms.attribs" }}</a>{{/* denma */}}
 			{{- if $d.DenmaAttachTab }}<a role="tab" aria-disabled="true">{{ Icon "paperclip" }} {{ .L.T "campaigns.attachments" }}</a>{{ end }}{{/* denma: cmd/denma_attachlimit.go */}}
 		</div>
 

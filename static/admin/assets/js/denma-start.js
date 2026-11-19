@@ -1,5 +1,6 @@
 // denma: the confirmation before a campaign is started or scheduled (cmd/denma_start.go).
 import { api } from './main.js';
+import { toast } from './utils.js';
 
 const FORMATS = {
   richtext: 'Rich text', html: 'Raw HTML', markdown: 'Markdown', plain: 'Plain text', visual: 'Visual',
@@ -47,6 +48,23 @@ export function denmaStartConfirm() {
         .finally(() => { shown.loading = false; });
 
       return new Promise((resolve) => { this._startResolve = resolve; });
+    },
+
+    // Whether campaign payload p has what sending needs; if not, says so on the Campaign tab.
+    denmaReadyToSend(p) {
+      const missing = [];
+      if (!(p.subject || '').trim()) {
+        missing.push('a subject');
+      }
+      if (!p.lists.length && !p.subscriber_tags.length) {
+        missing.push('lists or subscriber tags');
+      }
+      if (!missing.length) {
+        return true;
+      }
+      document.getElementById('campaign')?.click();
+      toast(`Add ${missing.join(' and ')} before sending.`, 'danger');
+      return false;
     },
 
     // The center's reply-to when the campaign has none, or the From.

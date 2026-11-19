@@ -281,7 +281,7 @@ function component(camp, sel) {
       };
     },
 
-    async onCreate() {
+    async onCreate(tab) {
       const p = this._payload();
       if (!p) {
         return;
@@ -306,7 +306,7 @@ function component(camp, sel) {
 
       const d = await api('campaigns', '/campaigns', 'POST', data);
       this._saved = true;
-      u.redirect(`${urls.admin}/campaigns/${d.id}#tab=content`, { message: i18n.ts('globals.messages.created', { name: d.name }) });
+      u.redirect(`${urls.admin}/campaigns/${d.id}#tab=${typeof tab === 'string' ? tab : 'content'}`, { message: i18n.ts('globals.messages.created', { name: d.name }) }); // denma: the tab clicked
     },
 
     async onSave() {
@@ -338,7 +338,7 @@ function component(camp, sel) {
       }
       // denma: what's about to be sent, and to how many (denma-start.js).
       const p = this._payload();
-      if (!p) {
+      if (!p || !this.denmaReadyToSend(p)) { // denma: denma-start.js
         return;
       }
       const tpl = this.templatesFor('campaign').find((t) => t.id === this.form.template_id);

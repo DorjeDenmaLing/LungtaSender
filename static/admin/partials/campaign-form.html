@@ -9,12 +9,12 @@
 		{{- if $isNew }}<section class="card">{{ end }}
 		<label data-field>
 			{{ $root.L.T "globals.fields.name" }}
-			<input name="name" maxlength="200" x-model="form.name" :disabled="!canEdit" autofocus required />
+			<input name="name" maxlength="200" x-model="form.name" :disabled="!canEdit" autofocus placeholder="Untitled campaign" />{{/* denma: a draft needs no name, subject or recipients (cmd/denma_drafts.go) */}}
 		</label>
 
 		<label data-field>
 			{{ $root.L.T "campaigns.subject" }}
-			<input name="subject" maxlength="5000" x-model="form.subject" :disabled="!canEdit" required />
+			<input name="subject" maxlength="5000" x-model="form.subject" :disabled="!canEdit" />{{/* denma */}}
 		</label>
 
 		<template x-if="form.content_type !== 'plain'">{{/* denma: preview text (internal/manager/denma_preview_text.go) */}}
@@ -27,7 +27,7 @@
 
 		<label data-field>
 			{{ $root.L.T "campaigns.fromAddress" }}
-			<input name="from_email" maxlength="200" x-model="form.from_email" :disabled="!canEdit" placeholder="{{ $root.L.T "campaigns.fromAddressPlaceholder" }}" required />
+			<input name="from_email" maxlength="200" x-model="form.from_email" :disabled="!canEdit" placeholder="{{ $root.L.T "campaigns.fromAddressPlaceholder" }}" />{{/* denma */}}
 		</label>
 
 		<label data-field>{{/* denma: cmd/denma_reply_to.go */}}
