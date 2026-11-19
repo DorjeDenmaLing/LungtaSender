@@ -210,6 +210,15 @@ type denmaSignupHook struct {
 	LastUsedAt  sql.NullTime   `db:"last_used_at" json:"-"`
 	LastUsed    *time.Time     `db:"-" json:"last_used_at"`
 	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
+	HubHookID   *int           `db:"hub_hook_id" json:"hub_hook_id"` // a shared webhook's (cmd/denma_hubsignup.go)
+
+	// Its notices (cmd/denma_signup_notify.go): its own address, or its shared webhook's.
+	NotifyURL      string     `db:"notify_url" json:"notify_url"`
+	NotifyFailures int        `db:"notify_failures" json:"notify_failures"`
+	NotifyError    string     `db:"notify_error" json:"notify_error"`
+	NotifyOKAt     *time.Time `db:"notify_ok_at" json:"notify_ok_at"`
+	Notices        bool       `db:"-" json:"notices"`
+	NotifySecret   string     `db:"-" json:"notify_secret,omitempty"` // shown once
 
 	// Its address and secret, shown in full only when made or renewed.
 	Address string `db:"-" json:"address"`
@@ -217,11 +226,16 @@ type denmaSignupHook struct {
 	Secret  string `db:"-" json:"secret,omitempty"`
 }
 
-const denmaSignupHookSQL = `SELECT h.id, h.name, h.kind, h.token_hash, h.token_hint, h.tags, h.request_tags, h.per_hour,
-	h.create_tags, h.allowed_from, h.created_by, CASE WHEN h.old_token_until > NOW() THEN h.old_token_until END AS old_token_until,
-	h.uses, h.last_used_at, h.created_at,
+// denmaSignupHookSQL reads webhooks; a shared one's name and settings are the hub's (cmd/denma_hubsignup.go).
+const denmaSignupHookSQL = `SELECT h.id, COALESCE(hh.name, h.name) AS name, h.kind, h.token_hash, h.token_hint, h.tags, h.request_tags, h.per_hour,
+	CASE WHEN h.hub_hook_id IS NULL THEN h.create_tags ELSE COALESCE(hh.create_tags, FALSE) END AS create_tags,
+	CASE WHEN h.hub_hook_id IS NULL THEN h.allowed_from ELSE COALESCE(hh.allowed_from, '{}') END AS allowed_from,
+	h.created_by, CASE WHEN h.hub_hook_id IS NULL AND h.old_token_until > NOW() THEN h.old_token_until END AS old_token_until,
+	h.uses, h.last_used_at, h.created_at, h.hub_hook_id,
+	CASE WHEN h.hub_hook_id IS NULL THEN h.notify_url ELSE COALESCE(hh.notify_url, '') END AS notify_url,
+	h.notify_failures, h.notify_error, h.notify_ok_at,
 	ARRAY(SELECT list_id FROM denma_signup_hook_lists hl WHERE hl.hook_id = h.id ORDER BY list_id) AS list_ids
-	FROM denma_signup_hooks h`
+	FROM denma_signup_hooks h LEFT JOIN denma.hub_signup_hooks hh ON hh.id = h.hub_hook_id`
 
 func initDenmaSignupAPIHandlers(g *echo.Group, a *App) {
 	pm := func(h echo.HandlerFunc) echo.HandlerFunc { return a.auth.Perm(h, denmaCenterPerm) }
@@ -229,7 +243,10 @@ func initDenmaSignupAPIHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/center/signup-hooks", pm(a.DenmaCreateSignupHook))
 	g.PUT("/api/denma/center/signup-hooks/:id", pm(a.DenmaUpdateSignupHook))
 	g.POST("/api/denma/center/signup-hooks/:id/key", pm(a.DenmaNewSignupHookKey))
+	g.POST("/api/denma/center/signup-hooks/:id/notify-secret", pm(a.DenmaNewSignupNotifySecret)) // cmd/denma_signup_notify.go
+	g.POST("/api/denma/center/signup-hooks/:id/notify-test", pm(a.DenmaTestSignupNotices))
 	g.DELETE("/api/denma/center/signup-hooks/:id", pm(a.DenmaDeleteSignupHook))
+	initDenmaHubSignupHandlers(g, a) // cmd/denma_hubsignup.go
 }
 
 // initDenmaSignupPublicHandlers registers the webhooks' addresses in a center.
@@ -237,6 +254,8 @@ func initDenmaSignupPublicHandlers(g *echo.Group, a *App) {
 	if denmaHub != nil && a.ko.String("denma.center") != "" {
 		g.GET("/signup/openapi.json", a.DenmaSignupOpenAPI) // cmd/denma_signup_openapi.go
 		g.POST("/signup/server", a.DenmaSignupServer)
+		g.GET("/signup/server", a.DenmaSignupServerInfo)          // cmd/denma_signup_notify.go
+		g.GET("/signup/server/events", a.DenmaSignupServerEvents) // cmd/denma_signup_notify.go
 		g.POST("/signup/:token", a.DenmaSignup)
 	}
 }
@@ -263,8 +282,12 @@ func denmaNewSignupToken(kind string) (string, string, string, error) {
 
 // signupHooks returns the center's webhooks, oldest first.
 func (a *App) signupHooks() ([]denmaSignupHook, error) {
+	if _, err := a.db.Exec(`DELETE FROM denma_signup_hooks h WHERE h.hub_hook_id IS NOT NULL
+		AND NOT EXISTS (SELECT 1 FROM denma.hub_signup_hooks hh WHERE hh.id = h.hub_hook_id)`); err != nil {
+		return nil, err
+	}
 	out := []denmaSignupHook{}
-	if err := a.db.Select(&out, denmaSignupHookSQL+` ORDER BY h.id`); err != nil {
+	if err := a.db.Select(&out, denmaSignupHookSQL+` WHERE h.hub_hook_id IS NULL OR hh.id IS NOT NULL ORDER BY h.id`); err != nil {
 		return nil, err
 	}
 	for i := range out {
@@ -274,6 +297,10 @@ func (a *App) signupHooks() ([]denmaSignupHook, error) {
 }
 
 func (a *App) signupHookView(h *denmaSignupHook) {
+	h.Notices = h.NotifyURL != ""
+	if h.HubHookID != nil { // the hub's settings, for superadmins (cmd/denma_hubsignup.go)
+		h.NotifyURL, h.NotifyError, h.AllowedFrom = "", "", nil
+	}
 	root := strings.TrimSuffix(a.urlCfg.RootURL, "/")
 	if h.Kind == denmaSignupServer {
 		h.Address = root + "/signup/server"
@@ -312,7 +339,7 @@ func (a *App) signupHookToChange(c echo.Context) (denmaSignupHook, error) {
 	if err != nil {
 		return h, err
 	}
-	if h.Kind == denmaSignupServer && !denmaIsSuperadmin(c) {
+	if h.Kind == denmaSignupServer && h.HubHookID == nil && !denmaIsSuperadmin(c) {
 		return h, echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can change a Server webhook.")
 	}
 	return h, nil
@@ -340,6 +367,7 @@ type denmaSignupHookForm struct {
 	PerHour     int      `json:"per_hour"`
 	CreateTags  bool     `json:"create_tags"`
 	AllowedFrom []string `json:"allowed_from"`
+	NotifyURL   string   `json:"notify_url"` // a Server webhook's notices
 }
 
 // checkSignupForm trims and checks a webhook's name, lists, tags and settings.
@@ -439,11 +467,12 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 		return err
 	}
 	kind := c.QueryParam("kind")
+	sharedID, _ := strconv.Atoi(c.QueryParam("shared")) // a shared webhook to turn on (cmd/denma_hubsignup.go)
 	switch kind {
 	case "", denmaSignupForm:
 		kind = denmaSignupForm
 	case denmaSignupServer:
-		if !denmaIsSuperadmin(c) {
+		if sharedID == 0 && !denmaIsSuperadmin(c) {
 			return echo.NewHTTPError(http.StatusForbidden, "Only a superadmin can make a Server webhook. Ask one to, for a system that vouches for people's consent.")
 		}
 	default:
@@ -460,6 +489,21 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 	if n >= denmaSignupMaxHooks {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("A center can have at most %d webhooks.", denmaSignupMaxHooks))
 	}
+	if kind == denmaSignupServer && sharedID > 0 {
+		id, err := a.signupTurnOnShared(c, sharedID, f)
+		if err != nil {
+			return err
+		}
+		h, err := a.signupHook(id)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, okResp{h})
+	}
+	notifySecret, err := a.signupNotifyForm(denmaSignupHook{}, &f) // cmd/denma_signup_notify.go
+	if err != nil {
+		return err
+	}
 	tok, hash, hint, err := denmaNewSignupToken(kind)
 	if err != nil {
 		return denmaInternal(err)
@@ -470,9 +514,11 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 	}
 	defer tx.Rollback()
 	var id int
-	if err := tx.QueryRow(`INSERT INTO denma_signup_hooks (name, kind, token_hash, token_hint, tags, request_tags, per_hour, create_tags, allowed_from, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		f.Name, kind, hash, hint, pq.Array(f.Tags), pq.Array(f.RequestTags), f.PerHour, f.CreateTags, pq.Array(f.AllowedFrom), denmaAPIWho(c)).Scan(&id); err != nil {
+	if err := tx.QueryRow(`INSERT INTO denma_signup_hooks (name, kind, token_hash, token_hint, tags, request_tags, per_hour, create_tags, allowed_from, created_by,
+		notify_url, notify_secret, notify_since)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CASE WHEN $11 <> '' THEN NOW() END) RETURNING id`,
+		f.Name, kind, hash, hint, pq.Array(f.Tags), pq.Array(f.RequestTags), f.PerHour, f.CreateTags, pq.Array(f.AllowedFrom), denmaAPIWho(c),
+		f.NotifyURL, notifySecret).Scan(&id); err != nil {
 		return denmaInternal(err)
 	}
 	if err := saveSignupLists(tx, id, f.ListIDs); err != nil {
@@ -486,6 +532,7 @@ func (a *App) DenmaCreateSignupHook(c echo.Context) error {
 		return err
 	}
 	a.signupShowToken(&h, tok)
+	h.NotifySecret = notifySecret
 	return c.JSON(http.StatusOK, okResp{h})
 }
 
@@ -511,14 +558,28 @@ func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if h.HubHookID != nil {
+		f.Name, f.CreateTags, f.AllowedFrom = h.Name, false, []string{} // the hub's
+	}
+	notifySecret, err := a.signupNotifyForm(h, &f) // cmd/denma_signup_notify.go
+	if err != nil {
+		return err
+	}
 	tx, err := a.db.Begin()
 	if err != nil {
 		return denmaInternal(err)
 	}
 	defer tx.Rollback()
+	// A new notices address starts from now.
 	if _, err := tx.Exec(`UPDATE denma_signup_hooks SET name = $2, tags = $3, request_tags = $4, per_hour = $5,
-		create_tags = $6, allowed_from = $7, updated_at = NOW() WHERE id = $1`,
-		h.ID, f.Name, pq.Array(f.Tags), pq.Array(f.RequestTags), f.PerHour, f.CreateTags, pq.Array(f.AllowedFrom)); err != nil {
+		create_tags = $6, allowed_from = $7, updated_at = NOW(),
+		notify_since = CASE WHEN $8 = '' THEN NULL WHEN notify_url IS DISTINCT FROM $8 THEN NOW() ELSE notify_since END,
+		notify_failures = CASE WHEN notify_url IS DISTINCT FROM $8 THEN 0 ELSE notify_failures END,
+		notify_next_at = CASE WHEN notify_url IS DISTINCT FROM $8 THEN NULL ELSE notify_next_at END,
+		notify_error = CASE WHEN notify_url IS DISTINCT FROM $8 THEN '' ELSE notify_error END,
+		notify_url = $8, notify_secret = CASE WHEN $9 <> '' THEN $9 ELSE notify_secret END WHERE id = $1`,
+		h.ID, f.Name, pq.Array(f.Tags), pq.Array(f.RequestTags), f.PerHour, f.CreateTags, pq.Array(f.AllowedFrom),
+		f.NotifyURL, notifySecret); err != nil {
 		return denmaInternal(err)
 	}
 	if err := saveSignupLists(tx, h.ID, f.ListIDs); err != nil {
@@ -530,6 +591,7 @@ func (a *App) DenmaUpdateSignupHook(c echo.Context) error {
 	if h, err = a.signupHook(h.ID); err != nil {
 		return err
 	}
+	h.NotifySecret = notifySecret
 	return c.JSON(http.StatusOK, okResp{h})
 }
 
@@ -541,6 +603,9 @@ func (a *App) DenmaNewSignupHookKey(c echo.Context) error {
 	h, err := a.signupHookToChange(c)
 	if err != nil {
 		return err
+	}
+	if h.HubHookID != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Its secret is the shared webhook's: a superadmin gives it a new one on the hub's Webhooks page.")
 	}
 	var r struct {
 		OverlapHours int `json:"overlap_hours"`
@@ -583,6 +648,11 @@ func (a *App) DenmaDeleteSignupHook(c echo.Context) error {
 	}
 	if _, err := a.db.Exec(`DELETE FROM denma_signup_hooks WHERE id = $1`, h.ID); err != nil {
 		return denmaInternal(err)
+	}
+	if h.HubHookID != nil {
+		if err := a.signupTurnOffShared(*h.HubHookID); err != nil {
+			return denmaInternal(err)
+		}
 	}
 	return c.JSON(http.StatusOK, okResp{true})
 }
@@ -1039,39 +1109,9 @@ const (
 
 // DenmaSignupServer is a Server webhook's address: another system signs someone up.
 func (a *App) DenmaSignupServer(c echo.Context) error {
-	if err := a.inCenter(); err != nil {
+	h, err := a.signupServerAuth(c, true) // cmd/denma_hubsignup.go
+	if err != nil {
 		return err
-	}
-	ip := c.RealIP()
-	if wait := denmaSignupBadSecrets.wait(ip); wait > 0 {
-		return denmaTooMany(wait)
-	}
-	secret, ok := denmaBearer(c.Request().Header.Get(echo.HeaderAuthorization), denmaSignupSecretPrefix)
-	if !ok {
-		denmaSignupBadSecrets.add(ip)
-		c.Response().Header().Set("WWW-Authenticate", `Bearer realm="listmonk"`)
-		return echo.NewHTTPError(http.StatusUnauthorized, "Send the webhook's secret as Authorization: Bearer <secret>.")
-	}
-	var h denmaSignupHook
-	hash := denmaAPIHash(secret)
-	if err := a.db.Get(&h, denmaSignupHookSQL+` WHERE h.kind = 'server'
-		AND (h.token_hash = $1 OR (h.old_token_hash = $1 AND h.old_token_until > NOW()))`, hash); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			denmaSignupBadSecrets.add(ip)
-			return echo.NewHTTPError(http.StatusUnauthorized, "This secret isn't in use (any more).")
-		}
-		return denmaInternal(err)
-	}
-	if !denmaFromAllowed(ip, h.AllowedFrom) {
-		a.log.Printf("denma: sign-up webhook %d (%s) refused from %s: not one of its addresses", h.ID, h.Name, ip)
-		return echo.NewHTTPError(http.StatusForbidden, fmt.Sprintf("This webhook can't be used from %s.", ip))
-	}
-	c.Set(denmaSignupHookCtx, h)
-	if !a.signupAllowed(-h.ID, denmaSignupServerPerMinute, time.Minute) {
-		return echo.NewHTTPError(http.StatusTooManyRequests, fmt.Sprintf("At most %d requests a minute. Try again in a minute.", denmaSignupServerPerMinute))
-	}
-	if _, err := a.db.Exec(`UPDATE denma_signup_hooks SET uses = uses + 1, last_used_at = NOW(), last_ip = $2 WHERE id = $1`, h.ID, ip); err != nil {
-		a.log.Printf("denma: error counting sign-up webhook %d's use: %v", h.ID, err)
 	}
 
 	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, denmaSignupMaxBody)
@@ -1210,6 +1250,11 @@ func (a *App) DenmaSignupServer(c echo.Context) error {
 			a.signupLog(c, "subscriber: %s (%s)", outcome, why) // for the log, not the answer
 		} else {
 			a.signupLog(c, "subscriber: %s", outcome)
+		}
+		// Someone it signed up (or asked to confirm) is its contact, for its notices (cmd/denma_signup_notify.go).
+		switch outcome {
+		case denmaSignupSubscribed, denmaSignupResubscribed, denmaSignupConfirmationSent:
+			a.signupContact(h.ID, email)
 		}
 		return c.JSON(http.StatusOK, okResp{result{Result: denmaSignupReceived, TagsCreated: created}})
 	}

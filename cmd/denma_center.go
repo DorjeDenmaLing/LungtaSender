@@ -142,9 +142,10 @@ type denmaWebhooksView struct {
 	SignupLists []denmaOption // the center's lists, but API campaigns'
 	PerHour     int           // a new Form webhook's sign-ups an hour
 	MaxPerHour  int
-	Super       bool            // a superadmin, who can make Server webhooks
-	ServerURL   string          // Server webhooks' address
-	Spec        json.RawMessage // the OpenAPI description (cmd/denma_signup_openapi.go)
+	Super       bool               // a superadmin, who can make Server webhooks
+	Shared      []denmaSharedOffer // shared Server webhooks not on here (cmd/denma_hubsignup.go)
+	ServerURL   string             // Server webhooks' address
+	Spec        json.RawMessage    // the OpenAPI description (cmd/denma_signup_openapi.go)
 }
 
 // denmaOption is a list or template to choose.
@@ -243,6 +244,9 @@ func (a *App) ViewDenmaWebhooks(c echo.Context) error {
 		MaxPerHour: denmaSignupMaxPerHour, Super: denmaIsSuperadmin(c),
 		ServerURL: strings.TrimSuffix(a.urlCfg.RootURL, "/") + "/signup/server"}
 	if view.SignupHooks, err = a.signupHooks(); err != nil {
+		return denmaInternal(err)
+	}
+	if view.Shared, err = a.signupSharedOffered(); err != nil {
 		return denmaInternal(err)
 	}
 	if err := a.db.Select(&view.SignupLists, `SELECT id, name, optin::TEXT AS optin FROM lists

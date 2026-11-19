@@ -1115,6 +1115,10 @@ section.analytics {
       min-width: 12rem;
     }
 
+    td[data-label="Secret"] code {
+      white-space: nowrap;
+    }
+
     td[data-label="Address"] {
       min-width: 15rem;
 
@@ -1129,7 +1133,7 @@ section.analytics {
       min-width: 0;
     }
 
-    .denma-signup-actions {
+    td .denma-signup-actions {
       flex-wrap: wrap;
       justify-content: flex-start;
     }

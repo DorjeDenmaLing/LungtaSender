@@ -1,0 +1,155 @@
+{{ define "admin-denma-hub-webhooks" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+
+{{/* denma: the hub's Webhooks page: shared Server webhooks, which centers turn on (cmd/denma_hubsignup.go). */}}
+<script nonce="{{ .CSPNonce }}">
+	window._denmaHubHooks = {{ ToJSON $d.Hooks }};
+</script>
+<section class="denma-signup denma-api" x-data="denmaHubHooks" x-cloak data-testid="hub-webhooks">
+	<header class="page-header hstack justify-between">
+		<h1 class="page-title">Webhooks</h1>
+		<button type="button" data-variant="primary" @click="onAdd" data-testid="btn-add-hub-hook">{{ Icon "plus" }} Add shared webhook</button>
+	</header>
+
+	<div class="page-content content vstack gap-6">
+		<fieldset class="card vstack gap-4">
+			<legend>Shared Server webhooks</legend>
+			<p class="text-light text-8">For a system that signs people up at many centers and vouches for their consent, such as the Shambhala Database. It has one secret and posts to each center's <code>/c/&lt;center&gt;/signup/server</code>. A center's admins turn it on, choosing its lists, on Config &rarr; Webhooks; until they do, its requests there are refused. Each center's own limits apply.</p>
+
+			<template x-if="!hooks.length">
+				<p class="text-light" data-testid="no-hub-hooks">No shared webhooks yet.</p>
+			</template>
+			<template x-if="hooks.length">
+				<div class="table-wrapper">
+					<table>
+						<thead><tr><th>Name</th><th>Secret</th><th>Centers</th><th>Notices</th><th></th></tr></thead>
+						<tbody>
+							<template x-for="h in hooks" :key="h.id">
+								<tr data-testid="hub-hook-row" :data-id="h.id">
+									<td data-label="Name">
+										<span x-text="h.name"></span>
+										<div class="text-light text-8" x-show="h.created_by" x-text="`Made by ${h.created_by}`"></div>
+										<div class="text-light text-8" x-text="h.create_tags ? 'May add tags new to a center' : 'Gives only the tags a center allows'"></div>
+									</td>
+									<td data-label="Secret">
+										<code x-text="`lms_…${h.token_hint}`"></code>
+										<template x-if="h.old_token_until">
+											<div class="text-8" x-text="`The secret it replaced works until ${new Date(h.old_token_until).toLocaleString()}.`"></div>
+										</template>
+										<div class="text-light text-8" x-show="h.allowed_from.length" x-text="`Only from ${h.allowed_from.join(', ')}`"></div>
+										<div class="text-light text-8" x-text="h.last_used_at ? `${h.uses.toLocaleString()} sign-up${h.uses === 1 ? '' : 's'}, last ${ago(h.last_used_at)}` : 'Not used yet'"></div>
+									</td>
+									<td data-label="Centers">
+										<span x-text="h.centers.length ? `On in ${h.centers.length}` : 'On in none yet'" data-testid="hub-hook-centers"></span>
+										<div class="text-light text-8" x-show="h.centers.length" x-text="centerNames(h)"></div>
+									</td>
+									<td data-label="Notices">
+										<span x-text="h.notify_url || 'None'" class="denma-api-url"></span>
+										<div class="text-light text-8" x-show="h.notify_url">Each center sends its own, signed.</div>
+									</td>
+									<td>
+										<div class="hstack gap-1 justify-end denma-signup-actions">
+											<button type="button" class="outline small" @click="onEdit(h)" data-testid="btn-edit-hub-hook">{{ Icon "edit-2" }} Edit</button>
+											<button type="button" class="outline small" @click="onRotateOpen(h)" data-testid="btn-hub-hook-key">{{ Icon "refresh-cw" }} New secret</button>
+											<template x-if="h.notify_url">
+												<button type="button" class="outline small" @click="onTest(h)" :aria-busy="isLoading('hubhooks')" data-testid="btn-hub-hook-test">{{ Icon "send" }} Test notices</button>
+											</template>
+											<template x-if="h.notify_url">
+												<button type="button" class="outline small" @click="onNotifySecret(h)" data-testid="btn-hub-hook-notify-secret">{{ Icon "refresh-cw" }} New signing secret</button>
+											</template>
+											<button type="button" class="outline small" data-variant="danger" @click="onDelete(h)" aria-label="Delete" data-testid="btn-delete-hub-hook">{{ Icon "trash-2" }}</button>
+										</div>
+									</td>
+								</tr>
+							</template>
+						</tbody>
+					</table>
+				</div>
+			</template>
+		</fieldset>
+	</div>
+
+	<dialog x-ref="hookDialog">
+		<form @submit.prevent="onSubmit">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="edit.id ? 'Edit shared webhook' : 'Add shared webhook'"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						Name
+						<input x-model="edit.name" x-ref="hookName" maxlength="200" required placeholder="Shambhala Database" data-testid="hub-hook-name" />
+					</label>
+					<label class="hstack gap-2">
+						<input type="checkbox" x-model="edit.create_tags" data-testid="hub-hook-create-tags" />
+						A request may also give tags new to a center, adding them (at most 50 a day per center)
+					</label>
+					<label data-field>
+						Used from (optional)
+						<textarea rows="2" x-model="edit.allowed_from" placeholder="203.0.113.4&#10;app.example.org" data-testid="hub-hook-from"></textarea>
+						<small data-hint>IP addresses, networks or host names, one per line. Empty for systems without a fixed address.</small>
+					</label>
+					<label data-field>
+						Notices address (optional)
+						<input type="url" x-model="edit.notify_url" placeholder="https://example.org/listmonk-notices" data-testid="hub-hook-notify" />
+						<small data-hint>Told when someone it signed up unsubscribes, complains, bounces or is blocklisted. https only.</small>
+					</label>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.hookDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-save-hub-hook" :disabled="!edit.name.trim() || isLoading('hubhooks')" :aria-busy="isLoading('hubhooks')">Save</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog x-ref="rotateDialog">
+		<form @submit.prevent="onRotate">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="`A new secret for ${rotate.name}`"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					<label data-field>
+						The old secret stops working
+						<select x-model.number="rotate.overlap_hours" data-testid="hub-hook-overlap">
+							<option value="0">At once</option>
+							<option value="1">In an hour</option>
+							<option value="24">In a day</option>
+							<option value="168">In a week</option>
+						</select>
+						<small data-hint>A while gives the other system time to change over. If it may have leaked, stop it at once.</small>
+					</label>
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.rotateDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-rotate-hub-hook" :aria-busy="isLoading('hubhooks')">New secret</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	{{/* A new secret or signing secret, shown once. */}}
+	<dialog x-ref="secretDialog" @close="shown = []">
+		<div class="dialog-card content">
+			<header class="dialog-head"><h4 class="dialog-title">Copy these now</h4></header>
+			<section class="dialog-body vstack gap-3">
+				<p>They aren't shown again. The system sends the secret as <code>Authorization: Bearer &lt;secret&gt;</code>, and checks each notice's <code>X-Listmonk-Signature</code> with the signing secret.</p>
+				<template x-for="s in shown" :key="s.label">
+					<label data-field>
+						<span x-text="s.label"></span>
+						<div class="hstack gap-2">
+							<input type="text" readonly class="denma-signup-url" :value="s.value" @focus="$event.target.select()" :aria-label="s.label" data-testid="hub-hook-secret" />
+							<button type="button" class="outline small" @click="copy(s.value)" aria-label="Copy it">{{ Icon "copy" }}</button>
+						</div>
+					</label>
+				</template>
+			</section>
+			<footer class="dialog-foot hstack gap-3 justify-end">
+				<button type="button" data-variant="primary" @click="$refs.secretDialog.close()">Done</button>
+			</footer>
+		</div>
+	</dialog>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/denma-hub-webhooks.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

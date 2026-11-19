@@ -3,8 +3,6 @@ package main
 // denma: the sending API's events and webhooks, and its automatic pause (cmd/denma_api.go).
 
 import (
-	"bytes"
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
@@ -12,10 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"syscall"
@@ -58,7 +54,7 @@ CREATE INDEX IF NOT EXISTS denma_subscribers_email_hash ON subscribers (denma_em
 CREATE OR REPLACE FUNCTION denma_api_optout_event() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM denma_api_keys) THEN RETURN NULL; END IF;
+    IF NOT EXISTS (SELECT 1 FROM denma_api_keys) AND NOT EXISTS (SELECT 1 FROM denma_signup_contacts) THEN RETURN NULL; END IF;
     IF TG_OP = 'UPDATE' AND OLD.kind = NEW.kind AND OLD.created_at = NEW.created_at THEN RETURN NULL; END IF;
     INSERT INTO denma_api_events (type, email)
         SELECT NEW.kind, lower(s.email) FROM subscribers s WHERE denma_email_hash(s.email) = NEW.email_hash LIMIT 1;
@@ -71,7 +67,7 @@ CREATE TRIGGER denma_api_optout_event AFTER INSERT OR UPDATE ON denma_optouts
 CREATE OR REPLACE FUNCTION denma_api_bounce_event() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM denma_api_keys) THEN RETURN NULL; END IF;
+    IF NOT EXISTS (SELECT 1 FROM denma_api_keys) AND NOT EXISTS (SELECT 1 FROM denma_signup_contacts) THEN RETURN NULL; END IF;
     INSERT INTO denma_api_events (type, email, reason, campaign_id)
         SELECT 'bounced', lower(s.email), 'hard bounce', NEW.campaign_id FROM subscribers s WHERE s.id = NEW.subscriber_id;
     RETURN NULL;
@@ -83,7 +79,7 @@ CREATE TRIGGER denma_api_bounce_event AFTER INSERT ON bounces
 CREATE OR REPLACE FUNCTION denma_api_blocklist_event() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM denma_api_keys) THEN RETURN NULL; END IF;
+    IF NOT EXISTS (SELECT 1 FROM denma_api_keys) AND NOT EXISTS (SELECT 1 FROM denma_signup_contacts) THEN RETURN NULL; END IF;
     IF jsonb_typeof(NEW.attribs) = 'object' AND coalesce(NEW.attribs->>'auto_blocklist_reason', '') <> ''
         -- Not again for a hard bounce here, which was an event already.
         AND NOT EXISTS (SELECT 1 FROM denma_api_events e WHERE e.type = 'bounced' AND e.email = lower(NEW.email)
@@ -244,6 +240,7 @@ func denmaStartAPIJobs(a *App) {
 	if _, err := denmaEveryMinute(a, 40, "api", func() {
 		a.signupLostLists() // cmd/denma_signup.go
 		a.apiCheckPause()
+		a.signupSendNotices() // cmd/denma_signup_notify.go
 		var n int
 		if err := a.db.Get(&n, `SELECT COUNT(*) FROM denma_api_keys`); err != nil || n == 0 {
 			return // no keys (or not installed yet)
@@ -564,32 +561,7 @@ func (a *App) postWebhook(to, secret string, events []denmaAPIEvent) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), denmaAPIWebhookTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, to, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "listmonk-webhooks/1.0")
-	req.Header.Set("X-Listmonk-Signature", denmaWebhookSignature(secret, time.Now().Unix(), body))
-	resp, err := denmaWebhookClient(denmaWebhookPrivate(a)).Do(req)
-	if errors.Is(err, errDenmaPrivateAddr) {
-		return errDenmaPrivateAddr
-	}
-	if err != nil {
-		var ue *url.Error
-		if errors.As(err, &ue) {
-			return ue.Err
-		}
-		return err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("it answered %s", resp.Status)
-	}
-	return nil
+	return a.postWebhookBody(to, secret, body) // cmd/denma_signup_notify.go
 }
 
 // denmaWebhookWait is how long to wait after the nth failure in a row, up to denmaAPIWebhookMaxWait.

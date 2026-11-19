@@ -9,6 +9,7 @@
 	window._denmaSignupSpec = {{ ToJSON $d.Spec }};
 	window._denmaSignupSuper = {{ $d.Super }};
 	window._denmaSignupPerHour = {{ $d.PerHour }};
+	window._denmaSharedHooks = {{ ToJSON $d.Shared }};
 </script>
 <section class="denma-signup" x-data="denmaSignupHooks" x-cloak data-testid="signup-hooks">
 	<header class="row page-header">
@@ -26,7 +27,7 @@
 	<div class="page-content content vstack gap-6">
 		<fieldset class="card vstack gap-4">
 			<legend>Sign-up webhooks</legend>
-			<p class="text-light text-8">How websites and other systems sign people up. A <strong>Form webhook</strong> is for a form on the center's website: people confirm by e-mail before they're subscribed. A <strong>Server webhook</strong> is for a system that already has their consent, such as a registration form's newsletter box; only superadmins make them.</p>
+			<p class="text-light text-8">How websites and other systems sign people up. A <strong>Form webhook</strong> is for a form on the center's website: people confirm by e-mail before they're subscribed. A <strong>Server webhook</strong> is for a system that already has their consent, such as a registration form's newsletter box; only superadmins make them. A <strong>shared</strong> one is for a system that serves many centers: it works here once you turn it on and choose its lists.</p>
 
 			<template x-if="!hooks.length">
 				<p class="text-light" data-testid="no-hooks">No webhooks yet.</p>
@@ -52,12 +53,15 @@
 									</td>
 									<td data-label="Address">
 										<code class="denma-api-url" x-text="h.address"></code>
-										<div class="text-light text-8" x-text="h.kind === 'server' ? `With its secret, lms_…${h.token_hint}` : 'Its full address was shown when it was made.'"></div>
+										<div class="text-light text-8" x-text="h.hub_hook_id ? 'With the shared webhook\'s secret' : h.kind === 'server' ? `With its secret, lms_…${h.token_hint}` : 'Its full address was shown when it was made.'"></div>
 										<template x-if="h.old_token_until">
 											<div class="text-8" x-text="`The secret it replaced works until ${new Date(h.old_token_until).toLocaleString()}.`"></div>
 										</template>
 										<template x-if="h.allowed_from.length">
 											<div class="text-light text-8" x-text="`Only from ${h.allowed_from.join(', ')}`"></div>
+										</template>
+										<template x-if="h.notices">
+											<div class="text-light text-8" x-text="noticesText(h)" data-testid="hook-notices"></div>
 										</template>
 									</td>
 									<td data-label="Sign-ups">
@@ -69,8 +73,16 @@
 										<template x-if="canChange(h)">
 											<div class="hstack gap-1 justify-end denma-signup-actions">
 												<button type="button" class="outline small" @click="onEdit(h)" data-testid="btn-edit-hook">{{ Icon "edit-2" }} Edit</button>
-												<button type="button" class="outline small" @click="onNewKey(h)" data-testid="btn-hook-key">{{ Icon "rotate-cw" }} <span x-text="h.kind === 'server' ? 'New secret' : 'New address'"></span></button>
-												<button type="button" class="outline small" data-variant="danger" @click="onDelete(h)" aria-label="Delete" data-testid="btn-delete-hook">{{ Icon "trash-2" }}</button>
+												<template x-if="!h.hub_hook_id">
+													<button type="button" class="outline small" @click="onNewKey(h)" data-testid="btn-hook-key">{{ Icon "rotate-cw" }} <span x-text="h.kind === 'server' ? 'New secret' : 'New address'"></span></button>
+												</template>
+												<template x-if="h.notify_url">
+													<button type="button" class="outline small" @click="onTestNotices(h)" :aria-busy="isLoading('hooks')" data-testid="btn-hook-test">{{ Icon "send" }} Test notices</button>
+												</template>
+												<template x-if="h.notify_url && !h.hub_hook_id">
+													<button type="button" class="outline small" @click="onNotifySecret(h)" data-testid="btn-hook-notify-secret">{{ Icon "refresh-cw" }} New signing secret</button>
+												</template>
+												<button type="button" class="outline small" data-variant="danger" @click="onDelete(h)" :aria-label="h.hub_hook_id ? 'Turn off' : 'Delete'" data-testid="btn-delete-hook">{{ Icon "trash-2" }}</button>
 											</div>
 										</template>
 										<template x-if="!canChange(h)">
@@ -84,6 +96,22 @@
 				</div>
 			</template>
 		</fieldset>
+
+		<template x-if="shared.length">
+			<fieldset class="card vstack gap-3" data-testid="shared-hooks">
+				<legend>Shared webhooks you can turn on</legend>
+				<p class="text-light text-8">Made by superadmins for a system that signs people up at many centers and vouches for their consent. Turning one on lets it subscribe people to the lists you choose.</p>
+				<template x-for="s in shared" :key="s.id">
+					<div class="hstack gap-3 justify-between" data-testid="shared-hook-row" :data-id="s.id">
+						<div>
+							<span x-text="s.name"></span>
+							<div class="text-light text-8" x-text="s.create_tags ? 'May add tags new to the center' : 'Gives only the tags you allow'"></div>
+						</div>
+						<button type="button" class="outline small" @click="onTurnOn(s)" data-testid="btn-turn-on-shared">{{ Icon "plus" }} Turn on</button>
+					</div>
+				</template>
+			</fieldset>
+		</template>
 
 		<fieldset class="card">
 			<legend>Setting up a form</legend>
@@ -125,7 +153,7 @@
 				<section class="dialog-body vstack gap-3">
 					<label data-field>
 						Name
-						<input x-model="edit.name" x-ref="hookName" maxlength="200" required :placeholder="edit.kind === 'server' ? 'Retreat Guru registrations' : 'Newsletter form on our website'" data-testid="hook-name" />
+						<input x-model="edit.name" x-ref="hookName" maxlength="200" required :readonly="!!edit.shared" :placeholder="edit.kind === 'server' ? 'Retreat Guru registrations' : 'Newsletter form on our website'" data-testid="hook-name" />
 					</label>
 					<fieldset data-field>
 						<legend>Lists</legend>
@@ -147,7 +175,7 @@
 							<small data-hint>Up to {{ $d.MaxPerHour }}. Set it a little above what the form really gets; past it, sign-ups are refused for the hour and the admins are told.</small>
 						</label>
 					</template>
-					<template x-if="edit.kind === 'server'">
+					<template x-if="edit.kind === 'server' && !edit.shared">
 						<div class="vstack gap-3">
 							<label class="hstack gap-2">
 								<input type="checkbox" x-model="edit.create_tags" data-testid="hook-create-tags" />
@@ -157,6 +185,11 @@
 								Used from (optional)
 								<textarea rows="2" x-model="edit.allowed_from" placeholder="203.0.113.4&#10;app.example.org" data-testid="hook-from"></textarea>
 								<small data-hint>IP addresses, networks or host names, one per line. Empty for systems without a fixed address, such as an AWS Lambda.</small>
+							</label>
+							<label data-field>
+								Notices address (optional)
+								<input type="url" x-model="edit.notify_url" placeholder="https://example.org/listmonk-notices" data-testid="hook-notify" />
+								<small data-hint>Told when someone it signed up unsubscribes, complains, bounces or is blocklisted. https only.</small>
 							</label>
 						</div>
 					</template>
@@ -195,15 +228,26 @@
 	</dialog>
 
 	{{/* A new address or secret, shown once. */}}
-	<dialog x-ref="tokenDialog" @close="token = ''">
+	<dialog x-ref="tokenDialog" @close="token = ''; notifySecret = ''">
 		<div class="dialog-card content">
-			<header class="dialog-head"><h4 class="dialog-title" x-text="tokenKind === 'server' ? 'The secret' : 'The address'"></h4></header>
+			<header class="dialog-head"><h4 class="dialog-title" x-text="!token ? 'The signing secret' : tokenKind === 'server' ? 'The secret' : 'The address'"></h4></header>
 			<section class="dialog-body vstack gap-3">
-				<p x-text="tokenKind === 'server' ? 'Copy it into the other system now, which sends it as Authorization: Bearer <secret>: it isn\'t shown again. If it\'s lost, make a new one.' : 'Copy it into the form now: it isn\'t shown again. If it\'s lost, give the webhook a new address.'"></p>
-				<div class="hstack gap-2">
-					<input type="text" readonly class="denma-signup-url" :value="token" @focus="$event.target.select()" aria-label="The address or secret" data-testid="hook-token" />
-					<button type="button" class="outline small" @click="copy(token)" aria-label="Copy it">{{ Icon "copy" }}</button>
-				</div>
+				<p x-show="token" x-text="tokenKind === 'server' ? 'Copy it into the other system now, which sends it as Authorization: Bearer <secret>: it isn\'t shown again. If it\'s lost, make a new one.' : 'Copy it into the form now: it isn\'t shown again. If it\'s lost, give the webhook a new address.'"></p>
+				<template x-if="token">
+					<div class="hstack gap-2">
+						<input type="text" readonly class="denma-signup-url" :value="token" @focus="$event.target.select()" aria-label="The address or secret" data-testid="hook-token" />
+						<button type="button" class="outline small" @click="copy(token)" aria-label="Copy it">{{ Icon "copy" }}</button>
+					</div>
+				</template>
+				<template x-if="notifySecret">
+					<label data-field>
+						Signing secret for its notices (checks <code>X-Listmonk-Signature</code>)
+						<div class="hstack gap-2">
+							<input type="text" readonly class="denma-signup-url" :value="notifySecret" @focus="$event.target.select()" aria-label="The signing secret" data-testid="hook-notify-secret" />
+							<button type="button" class="outline small" @click="copy(notifySecret)" aria-label="Copy it">{{ Icon "copy" }}</button>
+						</div>
+					</label>
+				</template>
 			</section>
 			<footer class="dialog-foot hstack gap-3 justify-end">
 				<button type="button" data-variant="primary" @click="$refs.tokenDialog.close()">Done</button>

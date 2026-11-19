@@ -107,13 +107,14 @@ func TestDenmaSignupOpenAPI(t *testing.T) {
 	if err := json.Unmarshal(denmaSignupOpenAPIDoc, &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{"/{token}", "/server"} {
-		if _, ok := doc.Paths[p]["post"]; !ok {
-			t.Errorf("POST %s isn't described", p)
+	for _, op := range []string{"post /{token}", "post /server", "get /server", "get /server/events"} {
+		m, p, _ := strings.Cut(op, " ")
+		if _, ok := doc.Paths[p][m]; !ok {
+			t.Errorf("%s isn't described", op)
 		}
 	}
-	if len(doc.Paths) != 2 {
-		t.Errorf("%d paths described, want 2", len(doc.Paths))
+	if len(doc.Paths) != 3 {
+		t.Errorf("%d paths described, want 3", len(doc.Paths))
 	}
 	keys := func(m map[string]json.RawMessage) []string {
 		out := make([]string, 0, len(m))

@@ -87,17 +87,19 @@ const ago = denmaAgo;
 // Config -> Webhooks: the sign-up webhooks (cmd/denma_signup.go), saved as they're changed.
 const denmaNewHookForm = (kind) => ({
   id: 0, kind, name: '', list_ids: [], tags: [], request_tags: [],
-  per_hour: window._denmaSignupPerHour || 50, create_tags: false, allowed_from: '',
+  per_hour: window._denmaSignupPerHour || 50, create_tags: false, allowed_from: '', notify_url: '', shared: 0,
 });
 
 function denmaSignupHooks() {
   return {
     hooks: window._denmaSignupHooks || [],
+    shared: window._denmaSharedHooks || [],
     lists: window._denmaSignupLists || [],
     isSuper: !!window._denmaSignupSuper,
     edit: denmaNewHookForm('form'),
     rotate: { id: 0, name: '', overlap_hours: 0 },
     token: '',
+    notifySecret: '',
     tokenKind: 'form',
     ago,
     denmaTagAutocomplete,
@@ -113,7 +115,21 @@ function denmaSignupHooks() {
     },
 
     kindText(h) {
+      if (h.hub_hook_id) {
+        return 'Shared Server webhook: vouches for consent';
+      }
       return h.kind === 'server' ? 'Server webhook: vouches for consent' : 'Form webhook: double opt-in';
+    },
+
+    noticesText(h) {
+      if (h.hub_hook_id) {
+        return h.notify_failures ? `Its notices from here are failing (${h.notify_failures} in a row); a superadmin can check its address on the hub.`
+          : `Notices go to the shared webhook's address${h.notify_ok_at ? `, last sent ${ago(h.notify_ok_at)}` : ''}`;
+      }
+      if (h.notify_failures) {
+        return `Notices to ${h.notify_url} are failing (${h.notify_failures} in a row): ${h.notify_error}`;
+      }
+      return `Notices to ${h.notify_url}${h.notify_ok_at ? `, last sent ${ago(h.notify_ok_at)}` : ''}`;
     },
 
     requestTagsText(h) {
@@ -125,10 +141,13 @@ function denmaSignupHooks() {
     },
 
     canChange(h) {
-      return h.kind !== 'server' || this.isSuper;
+      return h.kind !== 'server' || !!h.hub_hook_id || this.isSuper;
     },
 
     dialogTitle() {
+      if (this.edit.shared) {
+        return this.edit.id ? `Edit ${this.edit.name}` : `Turn on ${this.edit.name}`;
+      }
       const what = this.edit.kind === 'server' ? 'Server webhook' : 'Form webhook';
       return this.edit.id ? `Edit ${what}` : `Add ${what}`;
     },
@@ -158,8 +177,16 @@ function denmaSignupHooks() {
       this.$nextTick(() => this.$refs.hookName.focus());
     },
 
+    // A shared webhook, turned on with the lists and tags chosen.
+    onTurnOn(s) {
+      this.edit = { ...denmaNewHookForm('server'), name: s.name, shared: s.id };
+      this.$refs.hookDialog.showModal();
+    },
+
     onEdit(h) {
       this.edit = {
+        shared: h.hub_hook_id || 0,
+        notify_url: h.notify_url,
         id: h.id,
         kind: h.kind,
         name: h.name,
@@ -185,10 +212,12 @@ function denmaSignupHooks() {
     // A new address or secret, shown once.
     showToken(h) {
       this.token = h.url || h.secret || '';
+      this.notifySecret = h.notify_secret || '';
       this.tokenKind = h.kind;
       delete h.url;
       delete h.secret;
-      if (this.token) {
+      delete h.notify_secret;
+      if (this.token || this.notifySecret) {
         this.$refs.tokenDialog.showModal();
       }
     },
@@ -203,17 +232,36 @@ function denmaSignupHooks() {
         per_hour: e.per_hour,
         create_tags: e.create_tags,
         allowed_from: e.allowed_from.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean),
+        notify_url: e.shared ? '' : (e.notify_url || '').trim(),
       };
+      const q = e.shared ? `kind=server&shared=${e.shared}` : `kind=${e.kind}`;
       const h = e.id
         ? await api('hooks', `/denma/center/signup-hooks/${e.id}`, 'PUT', body)
-        : await api('hooks', `/denma/center/signup-hooks?kind=${e.kind}`, 'POST', body);
+        : await api('hooks', `/denma/center/signup-hooks?${q}`, 'POST', body);
       this.$refs.hookDialog.close();
-      if (e.id) {
+      if (e.id && !h.notify_secret) {
         u.toast(`Saved ${h.name}.`, 'success');
+      } else if (e.shared && !e.id) {
+        u.toast(`${h.name} is on.`, 'success');
+        this.shared = this.shared.filter((s) => s.id !== e.shared);
       } else {
         this.showToken(h);
       }
       this.put(h);
+    },
+
+    async onNotifySecret(h) {
+      if (!(await u.confirm(`Give ${h.name}'s notices a new signing secret? The old one stops working at once, so the system has to be given the new one.`))) {
+        return;
+      }
+      const nh = await api('hooks', `/denma/center/signup-hooks/${h.id}/notify-secret`, 'POST');
+      this.showToken(nh);
+      this.put(nh);
+    },
+
+    async onTestNotices(h) {
+      await api('hooks', `/denma/center/signup-hooks/${h.id}/notify-test`, 'POST');
+      u.toast('The notices address took the test event.', 'success');
     },
 
     async onNewKey(h) {
@@ -238,6 +286,16 @@ function denmaSignupHooks() {
     },
 
     async onDelete(h) {
+      if (h.hub_hook_id) {
+        if (!(await u.confirm(`Turn off ${h.name} here? It can't sign anyone up in this center until it's turned on again.`))) {
+          return;
+        }
+        await api('hooks', `/denma/center/signup-hooks/${h.id}`, 'DELETE');
+        this.hooks = this.hooks.filter((x) => x.id !== h.id);
+        this.shared.push({ id: h.hub_hook_id, name: h.name, create_tags: h.create_tags });
+        u.toast(`Turned off ${h.name}.`, 'success');
+        return;
+      }
       const what = h.kind === 'server' ? 'Its secret stops working, so the system using it can\'t sign anyone up through it.'
         : 'Its address stops working, so the form can\'t sign anyone up through it.';
       if (!(await u.confirm(`Delete ${h.name}? ${what}`))) {

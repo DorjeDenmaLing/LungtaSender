@@ -522,6 +522,9 @@ func denmaInitRegistry(db *sqlx.DB) error {
 	if err := denmaInitPeople(db); err != nil { // cmd/denma_people.go
 		return err
 	}
+	if err := denmaInitHubSignup(db); err != nil { // cmd/denma_hubsignup.go
+		return err
+	}
 	denmaInitTrigram(db)    // cmd/denma_trgm.go
 	return denmaInitMCP(db) // cmd/denma_mcp.go
 }

@@ -728,6 +728,22 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return fmt.Sprintf("Gave sign-up webhook %s a new address or secret", target)
 	case "DELETE /api/denma/center/signup-hooks/:id":
 		return "Deleted sign-up webhook " + target
+	case "POST /api/denma/center/signup-hooks/:id/notify-secret": // cmd/denma_signup_notify.go
+		return fmt.Sprintf("Gave sign-up webhook %s's notices a new signing secret", target)
+	case "POST /api/denma/center/signup-hooks/:id/notify-test":
+		return fmt.Sprintf("Tested sign-up webhook %s's notices", target)
+	case "POST /api/denma/hub/signup-hooks": // cmd/denma_hubsignup.go
+		return fmt.Sprintf("Added the shared sign-up webhook %q", str("name"))
+	case "PUT /api/denma/hub/signup-hooks/:id":
+		return fmt.Sprintf("Changed shared sign-up webhook %s (%q)", target, str("name"))
+	case "POST /api/denma/hub/signup-hooks/:id/key":
+		return fmt.Sprintf("Gave shared sign-up webhook %s a new secret", target)
+	case "POST /api/denma/hub/signup-hooks/:id/notify-secret":
+		return fmt.Sprintf("Gave shared sign-up webhook %s's notices a new signing secret", target)
+	case "POST /api/denma/hub/signup-hooks/:id/notify-test":
+		return fmt.Sprintf("Tested shared sign-up webhook %s's notices", target)
+	case "DELETE /api/denma/hub/signup-hooks/:id":
+		return "Deleted shared sign-up webhook " + target
 	case "POST /api/denma/center/api-keys": // cmd/denma_api.go
 		return fmt.Sprintf("Added the API key %q", str("name"))
 	case "PUT /api/denma/center/api-keys/:id":

@@ -3,9 +3,10 @@
   "info": {
     "title": "Sign-up webhooks",
     "version": "1.0.0",
-    "description": "How other systems and the center's website forms sign people up to the center's lists. They don't send e-mail: the sending API does (`<center>/v1/openapi.json`). Each webhook is made on the center's Config -> Webhooks page, with its lists and tags.\n\nThere are two kinds. Form webhooks are for a form on the center's website (Gravity Forms' Webhooks add-on, or any form that can POST), at a secret address of their own (`/signup/<token>`, shown once, when it's made). Their lists are double opt-in: whoever signs up is sent the confirmation e-mail, and is subscribed once they click it. Anyone can read a form's address in its page, so a Form webhook can't say someone has agreed already.\n\nServer webhooks are for a system that vouches for the person's consent (a booking system's registration with the newsletter box ticked), at `/signup/server` with the webhook's secret. Only superadmins make them. They can subscribe people at once, with a record of when and how they agreed.\n\nWhat a request gives (a name, attributes, tags) is written only when it adds the person: an existing subscriber gets the lists and the webhook's own tags, and the rest of their record is kept. A Server webhook adds attributes to theirs instead, never replacing a value they have.\n\nAttributes the center keeps itself can't be given: `consent_at`, `consent_source`, `consent_confirmed_at`, `consents` (but a Server webhook's consent record), `resubscribed_at`, `imported_at`, `consent_import`, `tags`, and any starting `auto_blocklist_` or `denma_`. A Form webhook leaves them out; a Server webhook refuses them.\n\nAnswers never say whether the center had the person already, or why someone can't be signed up again.",
+    "description": "How other systems and the center's website forms sign people up to the center's lists. They don't send e-mail: the sending API does (`<center>/v1/openapi.json`). Each webhook is made on the center's Config -> Webhooks page, with its lists and tags.\n\nThere are two kinds. Form webhooks are for a form on the center's website (Gravity Forms' Webhooks add-on, or any form that can POST), at a secret address of their own (`/signup/<token>`, shown once, when it's made). Their lists are double opt-in: whoever signs up is sent the confirmation e-mail, and is subscribed once they click it. Anyone can read a form's address in its page, so a Form webhook can't say someone has agreed already.\n\nServer webhooks are for a system that vouches for the person's consent (a booking system's registration with the newsletter box ticked), at `/signup/server` with the webhook's secret. Only superadmins make them. They can subscribe people at once, with a record of when and how they agreed.\n\nA shared Server webhook is for a system that signs people up at many centers (the Shambhala Database). Superadmins make it on the hub's Webhooks page, with one secret for every center. It posts to each center's own `/signup/server`, and works in a center once its admins have turned it on, choosing its lists and tags there; elsewhere it's refused (403). `GET /server` says which lists and tags it has in a center. Each center's limits apply to it as to the center's own, and it makes at most 1,200 requests a minute, all centers together.\n\nA Server webhook with a notices address is told, signed, when someone it signed up later unsubscribes, complains, bounces or is blocklisted (`notices`, under webhooks); `GET /server/events` gives the same.\n\nWhat a request gives (a name, attributes, tags) is written only when it adds the person: an existing subscriber gets the lists and the webhook's own tags, and the rest of their record is kept. A Server webhook adds attributes to theirs instead, never replacing a value they have.\n\nAttributes the center keeps itself can't be given: `consent_at`, `consent_source`, `consent_confirmed_at`, `consents` (but a Server webhook's consent record), `resubscribed_at`, `imported_at`, `consent_import`, `tags`, and any starting `auto_blocklist_` or `denma_`. A Form webhook leaves them out; a Server webhook refuses them.\n\nAnswers never say whether the center had the person already, or why someone can't be signed up again.",
     "x-changes": [
-      "2026-10: Server webhooks replace the sending API's POST /v1/subscribers."
+      "2026-10: Server webhooks replace the sending API's POST /v1/subscribers.",
+      "2026-11: Shared Server webhooks, for a system that serves many centers; GET /server and GET /server/events; notices of unsubscribes, complaints, bounces and blocklistings."
     ]
   },
   "servers": [{"url": "/signup", "description": "The center's sign-up webhooks."}],
@@ -52,9 +53,59 @@
           "200": {"description": "Received.", "content": {"application/json": {"schema": {"type": "object", "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/ServerResult"}}}}}},
           "400": {"description": "The request isn't valid, or gives an attribute the center keeps itself.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "401": {"description": "No secret, or one that isn't in use.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-          "403": {"description": "Not from one of the webhook's addresses, or a list that isn't the webhook's.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "Not from one of the webhook's addresses, a list that isn't the webhook's, or a shared webhook that isn't on in this center.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "410": {"description": "The webhook has no lists left.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "429": {"description": "Too many requests.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      },
+      "get": {
+        "tags": ["Server"],
+        "operationId": "serverInfo",
+        "summary": "The webhook's lists and tags in this center",
+        "description": "What the webhook can do in this center: its lists (their IDs, for `lists`), the tags it gives everyone, those a request may give, and whether it may add new ones. For a shared webhook, these are the center's choice.",
+        "security": [{"secret": []}],
+        "responses": {
+          "200": {"description": "The webhook in this center.", "content": {"application/json": {"schema": {"type": "object", "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/ServerInfo"}}}}}},
+          "401": {"description": "No secret, or one that isn't in use.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "Not from one of the webhook's addresses, or a shared webhook that isn't on in this center.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"description": "Too many requests.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/server/events": {
+      "get": {
+        "tags": ["Server"],
+        "operationId": "serverEvents",
+        "summary": "Unsubscribes, complaints, bounces and blocklistings",
+        "description": "The last 30 days' events in this center about the people the webhook signed up, from when it first did, oldest first: who unsubscribed (from the center), complained (marked an e-mail as spam), bounced (the address doesn't exist), or was blocklisted for another reason (its domain takes no mail, or the address can't receive e-mail). The same events are sent to its notices address, if it has one; this is for a system that can't take them, or missed some. Ask again with `after` set to the answer's `after` while `more` is true.",
+        "security": [{"secret": []}],
+        "parameters": [
+          {"name": "after", "in": "query", "description": "The `id` of the last event already had (0 for the oldest kept).", "schema": {"type": "integer", "format": "int64", "minimum": 0}},
+          {"name": "limit", "in": "query", "description": "At most this many (100 if not given, at most 1,000).", "schema": {"type": "integer", "minimum": 1, "maximum": 1000}}
+        ],
+        "responses": {
+          "200": {"description": "Its events.", "content": {"application/json": {"schema": {"type": "object", "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Events"}}}}}},
+          "401": {"description": "No secret, or one that isn't in use.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "Not from one of the webhook's addresses, or a shared webhook that isn't on in this center.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "429": {"description": "Too many requests.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "notices": {
+      "post": {
+        "tags": ["Server"],
+        "operationId": "serverNotices",
+        "summary": "Unsubscribes, complaints, bounces and blocklistings, as they happen",
+        "description": "Sent within a minute to the webhook's notices address (set by a superadmin on Config -> Webhooks, or the hub's Webhooks page for a shared one; `https://` only), in order, at most 100 events a request, from each center separately: a shared webhook's come from every center it's on in, each naming its center. Only events since the address was set are sent. Answer with a 2xx; anything else is tried again later, waiting longer each time (up to 6 hours), and later events wait their turn. The Webhooks pages can send a test event (`\"type\": \"test\"`).\n\nCheck the signature before trusting the request: `X-Listmonk-Signature` is `t=<unix time>,v1=<signature>`, the signature being the hex HMAC-SHA256, with the notices' signing secret (`whsec_...`, shown once), of the time, a full stop and the request's body (`<t>.<body>`). Compare it in constant time, and refuse a request whose `t` is more than 5 minutes from your clock.",
+        "security": [],
+        "parameters": [
+          {"name": "X-Listmonk-Signature", "in": "header", "required": true, "description": "`t=<unix time>,v1=<hex HMAC-SHA256 of \"<t>.<body>\">`, with the signing secret.", "schema": {"type": "string"}}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Notices"}}}},
+        "responses": {
+          "200": {"description": "Taken; any 2xx will do."}
         }
       }
     }
@@ -97,6 +148,51 @@
           "confirmed": {"type": "boolean", "description": "They've agreed to be subscribed already: subscribed at once, double opt-in lists too, and again if they had unsubscribed (with a consent from after it). Needs `attribs.consents`."},
           "attribs": {"type": "object", "description": "Added to theirs, never replacing a value they have. Up to 10,000 bytes. With `\"confirmed\": true`, `consents` is needed: a list of `{\"at\": \"<when they agreed, RFC 3339>\", \"source\": \"<how>\"}` (and anything else to keep with it)."},
           "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20, "description": "Added to theirs: the webhook's request tags, and, if it may create tags, those it created and ones new to the center (at most 50 a day); others are left out. A tag's other names (Subscribers -> Tags) give the tag."}
+        }
+      },
+      "ServerInfo": {
+        "type": "object",
+        "required": ["name", "center", "center_slug", "lists", "tags", "request_tags", "create_tags", "notices"],
+        "properties": {
+          "name": {"type": "string", "description": "The webhook's name."},
+          "center": {"type": "string", "description": "The center's name."},
+          "center_slug": {"type": "string", "description": "The center's address in listmonk (`/c/<center_slug>/`)."},
+          "lists": {"type": "array", "items": {"type": "object", "required": ["id", "name", "optin"], "properties": {"id": {"type": "integer"}, "name": {"type": "string"}, "optin": {"type": "string", "enum": ["single", "double"]}}}, "description": "Its lists here."},
+          "tags": {"type": "array", "items": {"type": "string"}, "description": "Given to everyone it signs up here."},
+          "request_tags": {"type": "array", "items": {"type": "string"}, "description": "Those a request may give here."},
+          "create_tags": {"type": "boolean", "description": "Whether a request may also give tags new to the center."},
+          "notices": {"type": "boolean", "description": "Whether it has a notices address."}
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": ["id", "type", "email", "reason", "campaign_id", "created_at"],
+        "properties": {
+          "id": {"type": "integer", "format": "int64", "description": "Its place in the center's feed, increasing: `GET /server/events?after=` takes it. A shared webhook's notices from different centers each have their own."},
+          "type": {"type": "string", "enum": ["unsubscribed", "complained", "bounced", "blocklisted", "test"], "description": "`unsubscribed` (from the center); `complained` (marked an e-mail as spam); `bounced` (a hard bounce: the address doesn't exist); `blocklisted` for another reason (its domain takes no mail, or the address can't receive e-mail); `test`, from a Webhooks page, to the notices address only."},
+          "email": {"type": "string", "description": "The address it's about."},
+          "reason": {"type": "string", "description": "Why, for `blocklisted`."},
+          "campaign_id": {"type": "null", "description": "Always null here."},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Events": {
+        "type": "object",
+        "required": ["events", "after", "more"],
+        "properties": {
+          "events": {"type": "array", "items": {"$ref": "#/components/schemas/Event"}},
+          "after": {"type": "integer", "format": "int64", "description": "The last event's `id` (or the `after` asked for, if none): ask again with it."},
+          "more": {"type": "boolean", "description": "Whether there may be more: ask again."}
+        }
+      },
+      "Notices": {
+        "type": "object",
+        "required": ["center", "center_slug", "webhook", "events"],
+        "properties": {
+          "center": {"type": "string", "description": "The center's name."},
+          "center_slug": {"type": "string", "description": "The center's address in listmonk (`/c/<center_slug>/`); empty in a test from the hub."},
+          "webhook": {"type": "string", "description": "The webhook's name."},
+          "events": {"type": "array", "maxItems": 100, "items": {"$ref": "#/components/schemas/Event"}}
         }
       },
       "ServerResult": {
