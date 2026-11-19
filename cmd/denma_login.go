@@ -370,20 +370,22 @@ func (a *App) DenmaForgot(c echo.Context) error {
 			a.log.Printf("denma: error finding the person for a forgotten password: %v", err)
 		}
 		if p != nil {
-			go a.denmaSendReset(p)
+			go a.denmaSendReset(p, nil)
 		}
 	}
 	return a.ForgotPage(c)
 }
 
-// denmaSendReset e-mails a person a password link, sent by their first center (the hub if none runs).
-func (a *App) denmaSendReset(p *denmaPerson) {
+// denmaSendReset e-mails a person a password link, sent by center from, else their first center (the hub if none runs).
+func (a *App) denmaSendReset(p *denmaPerson, from *App) {
 	token, err := denmaHub.newToken(p.ID, passwordResetTTL)
 	if err != nil {
 		a.log.Printf("denma: error making a reset link for person %d: %v", p.ID, err)
 		return
 	}
-	if ms, err := denmaHub.centersOf(p.ID); err != nil {
+	if from != nil {
+		a = from
+	} else if ms, err := denmaHub.centersOf(p.ID); err != nil {
 		a.log.Printf("denma: error finding the centers of person %d for a reset link: %v", p.ID, err)
 	} else if len(ms) > 0 {
 		if ctr := denmaHub.get(ms[0].Slug); ctr != nil {

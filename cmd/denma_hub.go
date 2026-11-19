@@ -56,12 +56,13 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaRetryHandlers(g, a)       // cmd/denma_retries.go
 	initDenmaStartHandlers(g, a)       // cmd/denma_start.go
 	initDenmaPeopleAPIHandlers(g, a)
-	initDenmaDomainAPIHandlers(g, a)   // cmd/denma_domains.go
-	initDenmaResubscribeHandlers(g, a) // cmd/denma_resubscribe.go
-	initDenmaSignupAPIHandlers(g, a)   // cmd/denma_signup.go
-	initDenmaAPIKeyHandlers(g, a)      // cmd/denma_api.go
-	initDenmaMCPKeyHandlers(g, a)      // cmd/denma_mcp.go
-	initDenmaVersionHandlers(g, a)     // cmd/denma_versions.go
+	initDenmaPasswordResetHandlers(g, a) // cmd/denma_password_reset.go
+	initDenmaDomainAPIHandlers(g, a)     // cmd/denma_domains.go
+	initDenmaResubscribeHandlers(g, a)   // cmd/denma_resubscribe.go
+	initDenmaSignupAPIHandlers(g, a)     // cmd/denma_signup.go
+	initDenmaAPIKeyHandlers(g, a)        // cmd/denma_api.go
+	initDenmaMCPKeyHandlers(g, a)        // cmd/denma_mcp.go
+	initDenmaVersionHandlers(g, a)       // cmd/denma_versions.go
 	g.GET("/api/denma/audit", a.DenmaGetAudit)
 	initDenmaMaintenanceHandlers(g, a) // cmd/denma_maintenance.go
 }

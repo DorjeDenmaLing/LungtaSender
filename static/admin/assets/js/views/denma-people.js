@@ -2,9 +2,11 @@
 import Alpine from 'alpinejs';
 import { api } from '../main.js';
 import * as u from '../utils.js';
+import { denmaPasswordReset } from '../denma-password-reset.js';
 
 function denmaPeople() {
   return {
+    ...denmaPasswordReset(),
     q: '',
 
     // Whether a row (its data-find text) matches the search.

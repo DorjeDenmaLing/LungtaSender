@@ -3211,3 +3211,9 @@ p.denma-editing-notice {
     overflow-wrap: anywhere;
     padding: 0.5rem 0.8rem;
 }
+
+/* A user's page: the reset link's hint under its button. */
+.denma-reset small {
+    display: block;
+    margin-top: var(--space-1);
+}

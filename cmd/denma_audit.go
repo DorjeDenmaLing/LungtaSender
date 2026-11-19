@@ -683,6 +683,10 @@ func denmaAuditAction(method, route, target, targetName string, body []byte, sta
 		return "Changed their own profile"
 	case "DELETE /api/denma/people/:id/twofa":
 		return "Turned off two-factor sign-in for " + label("person")
+	case "POST /api/denma/people/:id/password-reset":
+		return "Sent a link to set a new password to " + label("person")
+	case "POST /api/users/:id/password-reset":
+		return "Sent a link to set a new password to " + label("user")
 	case "PUT /api/users/:id/twofa":
 		return "Turned on two-factor sign-in for " + label("user")
 	case "DELETE /api/users/:id/twofa":

@@ -5,6 +5,7 @@ import {
   i18n,
 } from '../main.js';
 import * as u from '../utils.js';
+import { denmaPasswordReset } from '../denma-password-reset.js'; // denma: a reset link for someone
 
 // usersView is the users list page component.
 function usersView() {
@@ -70,6 +71,7 @@ function userForm({ isNew = true, canSave = false } = {}) {
   });
 
   return {
+    ...denmaPasswordReset(), // denma
     form: !isNew ? fromUser(user) : makeForm(),
     apiToken: null,
     createdName: '',

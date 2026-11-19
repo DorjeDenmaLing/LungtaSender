@@ -50,6 +50,7 @@
 						<td data-label="Two-factor">{{ if .TwofaKey.Valid }}On{{ else }}<span class="text-light">Off</span>{{ end }}</td>
 						<td class="date-stack" data-label="{{ $.L.T "users.lastLogin" }}">{{ if .LoggedInAt.Valid }}{{ NiceDate .LoggedInAt }}{{ else }}<span class="text-light">&mdash;</span>{{ end }}</td>
 						<td class="actions align-right">
+							<button type="button" class="small outline" data-testid="btn-password-reset" :disabled="isLoading('denma.reset')" @click.prevent="denmaSendReset('/denma/people/{{ .ID }}/password-reset', {{ ToJSON .Name }}, {{ ToJSON .Email }})">Send password reset link</button>
 							{{- if .TwofaKey.Valid }}
 							<button type="button" class="small outline" data-testid="btn-twofa-off" :disabled="isLoading('people')" @click.prevent="twofaOff({{ .ID }}, {{ ToJSON .Name }})">Turn off two-factor</button>
 							{{- end }}

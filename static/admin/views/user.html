@@ -78,6 +78,12 @@
 						<p>They're e-mailed an invitation: a link to set their password, or, if they have an account already, word that they can now sign in to this center with it. They sign in at <a href="/login">/login</a> with their e-mail address or username.</p>
 						{{- else }}
 						<p>They sign in at <a href="/login">/login</a> with their e-mail address or username. Their password and two-factor sign-in are their own; they can reset a forgotten password from the sign-in page.</p>
+						{{- if $canSave }}
+						<div class="denma-reset">
+							<button type="button" class="outline small" data-testid="btn-password-reset" :disabled="isLoading('denma.reset')" @click.prevent="denmaSendReset(`/users/${form.id}/password-reset`, form.name || form.username, form.email)">{{ Icon "mail" }} Send a password reset link</button>
+							<small data-hint>E-mails them a link to choose a new password, for when they can't sign in.</small>
+						</div>
+						{{- end }}
 						{{- end }}
 					</fieldset>
 				</template>
