@@ -99,6 +99,11 @@ func denmaIsMarketing(m models.Message) bool {
 	return (m.Campaign != nil && m.Campaign.ID > 0) || m.Headers.Get(denmaSentAsHeader) != ""
 }
 
+// denmaMessageInsertSQL records an e-mail to subscriber $1 (or address $2), flagging a provider that reports complaints.
+var denmaMessageInsertSQL = `INSERT INTO denma_messages (subscriber_id, kind, campaign_id, automation_id, step, subject, status, error, feedback)
+	SELECT s.id, $3, $4, $5, $6, $7, $8, $9, ` + denmaFeedbackSQL("s.email") + ` FROM subscribers s
+	WHERE s.id = (CASE WHEN $1::INT > 0 THEN $1::INT ELSE (SELECT id FROM subscribers WHERE LOWER(email) = LOWER($2) LIMIT 1) END)`
+
 // denmaLogMessageTimeout bounds recording one e-mail.
 const denmaLogMessageTimeout = 2 * time.Second
 
@@ -127,9 +132,7 @@ func denmaLogMessages(em *email.Emailer, db *sqlx.DB, ko *koanf.Koanf) {
 		// Bounded: it runs in the shared send path.
 		ctx, cancel := context.WithTimeout(context.Background(), denmaLogMessageTimeout)
 		defer cancel()
-		if _, err := db.ExecContext(ctx, `INSERT INTO denma_messages (subscriber_id, kind, campaign_id, automation_id, step, subject, status, error)
-			SELECT s.id, $3, $4, $5, $6, $7, $8, $9 FROM subscribers s
-			WHERE s.id = (CASE WHEN $1::INT > 0 THEN $1::INT ELSE (SELECT id FROM subscribers WHERE LOWER(email) = LOWER($2) LIMIT 1) END)`,
+		if _, err := db.ExecContext(ctx, denmaMessageInsertSQL,
 			m.Subscriber.ID, to, kind, campID, autoID, step, m.Subject, status, errText); err != nil {
 			l.Printf("denma: error recording a sent e-mail: %v", err)
 		}

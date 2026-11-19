@@ -98,10 +98,10 @@ function component(opts) {
       }
 
       if (this.showBounces) {
-        Promise.all([s.fetchBounces(p.prev.start), camps.catch(() => null)])
-          .then(([rows, c]) => {
+        Promise.all([s.fetchBounces(p.prev.start), camps.catch(() => null), s.feedbackSends(p).catch(() => null)])
+          .then(([rows, c, fb]) => {
             if (seq !== this.seq) return;
-            this.renderBounces(rows, c && sends(c, p.cur), c && sends(c, p.prev), p);
+            this.renderBounces(rows, c && sends(c, p.cur), c && sends(c, p.prev), fb, p);
           })
           .catch((err) => {
             if (seq !== this.seq) return;
@@ -113,14 +113,21 @@ function component(opts) {
       }
     },
 
-    renderBounces(rows, sends, prevSends, p) {
+    // fb: emails to providers that report complaints, { cur, prev, since } (cmd/denma_feedback.go).
+    renderBounces(rows, sends, prevSends, fb, p) {
       const cur = bounceCounts(rows, p.cur);
       const prev = bounceCounts(rows, p.prev);
       const rate = (n, d) => (d > 0 ? n / d : null);
       cur.hardRate = rate(cur.hard, sends);
       prev.hardRate = rate(prev.hard, prevSends);
-      cur.complaintRate = rate(cur.complaint, sends);
-      prev.complaintRate = rate(prev.complaint, prevSends);
+      // Complaints from when the record of emails starts, as there are no emails to count them against before.
+      const since = fb && fb.since ? new Date(fb.since) : null;
+      const counted = (per) => rows.filter((b) => {
+        const t = new Date(b.created_at);
+        return b.type === 'complaint' && since && t >= since && t >= per.start && t < per.end;
+      }).length;
+      cur.complaintRate = fb && rate(counted(p.cur), fb.cur);
+      prev.complaintRate = fb && rate(counted(p.prev), fb.prev);
 
       this.bounce.cells = BOUNCE_METRICS.map((m) => ({
         key: m[0],

@@ -14,7 +14,27 @@ const METRICS = [
   ['newSubs', 'New contacts', 'count', true, 'Contacts added in this period.'],
 ];
 
-const KEYS = ['campaigns', 'sends', 'camp_bounces', 'tracked_delivered', 'opens', 'clicks', 'unlinked', 'unsubs', 'hard', 'soft', 'complaint', 'new_subscribers'];
+const KEYS = ['campaigns', 'sends', 'camp_bounces', 'tracked_delivered', 'opens', 'clicks', 'unlinked', 'unsubs', 'hard', 'soft', 'complaint', 'feedback_sends', 'feedback_complaint', 'new_subscribers'];
+
+// The SES account's figure, shown for all centers (cmd/denma_ses_reputation.go).
+const SES_HELP = "Amazon SES's own figure for all centers together, as it stands now (not for this period): complaints over recent emails to providers that report them (Gmail doesn't). SES reviews accounts at 0.1% and can pause sending at 0.5%.";
+const SES_STATUS = { HEALTHY: 'Healthy', PROBATION: 'Under review', SHUTDOWN: 'Sending paused' };
+
+// sesNote says how the SES account stands, and whether it's sending.
+function sesNote(r) {
+  if (!r) {
+    return '';
+  }
+  if (!r.available) {
+    return `Amazon SES's own figures aren't shown${r.reason ? ` (${r.reason.replace(/\.$/, '')})` : ''}; the complaint rate is worked out from the centers' emails, as SES counts them.`;
+  }
+  let t = `Amazon SES account: ${SES_STATUS[r.status] || r.status || 'status not given'}${r.sending_enabled ? '' : ', sending paused'}.`;
+  if (r.at) {
+    const at = new Date(r.at);
+    t += ` Its rates were last updated ${s.fmtDate(at)}, ${s.fmtTime(at)}.`;
+  }
+  return t;
+}
 
 const placeholders = (list) => list.map((m) => ({ key: m[0], label: m[1], help: m[4] || m[3], value: '…', change: null, health: null }));
 
@@ -40,6 +60,9 @@ function component() {
     centers: [],
     perf: { cells: placeholders(METRICS) },
     bounce: { cells: placeholders(s.BOUNCE_METRICS) },
+    ses: null,
+    sesNote: '',
+    sesAlert: false,
     problems: { text: '', url: '' },
     note: '',
     busy: true,
@@ -79,6 +102,12 @@ function component() {
       this.busy = true;
       this.p = p;
 
+      // SES's figures come in on their own, so a slow answer doesn't hold up the rest.
+      s.getJSON('/denma/hub/ses').catch(() => null).then((r) => {
+        if (seq !== this.seq) return;
+        this.ses = r;
+        if (this.centers.length) this.render(); // otherwise the figures' render shows it
+      });
       try {
         const data = await hubStats(p);
         if (seq !== this.seq) return;
@@ -116,6 +145,19 @@ function component() {
         change: s.change(cur[m[0]], prev[m[0]], false, m[2], true),
         health: s.health(cur[m[0]], m[4]),
       }));
+      const r = this.ses;
+      if (!this.center && r && r.available && r.complaint_rate != null) {
+        const cell = this.bounce.cells.find((x) => x.key === 'complaintRate');
+        Object.assign(cell, {
+          label: 'Complaint rate (Amazon SES)',
+          help: SES_HELP,
+          value: s.fmt(r.complaint_rate, 'pct2'),
+          change: { cls: '', arrow: '', text: 'now, all centers', title: SES_HELP },
+          health: s.health(r.complaint_rate, s.BOUNCE_METRICS[4][4]),
+        });
+      }
+      this.sesNote = sesNote(r);
+      this.sesAlert = !!(r && r.available && ((r.status && r.status !== 'HEALTHY') || !r.sending_enabled));
 
       const days = this.p ? s.periodDays(this.p) : 0;
       const subs = list.reduce((n, c) => n + (c.subscribers || 0), 0);

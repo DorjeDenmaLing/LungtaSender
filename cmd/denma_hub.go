@@ -41,6 +41,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	// Gzipped.
 	g.GET("/api/denma/hub/stats", a.DenmaHubStats, middleware.Gzip())
 	g.GET("/api/denma/hub/analytics", a.DenmaHubAnalytics, middleware.Gzip())
+	g.GET("/api/denma/hub/ses", a.DenmaHubSES)                                     // cmd/denma_ses_reputation.go
 	g.GET("/api/denma/hub/update", a.auth.Perm(a.DenmaUpdateInfo, "settings:get")) // cmd/denma_updates.go
 	g.POST("/api/denma/hub/update", a.auth.Perm(a.DenmaStartUpdate, "settings:manage"))
 	g.POST("/api/denma/centers", a.DenmaCreateCenter)
@@ -110,6 +111,8 @@ type denmaPeriod struct {
 	Hard             int `db:"hard" json:"hard"`
 	Soft             int `db:"soft" json:"soft"`
 	Complaint        int `db:"complaint" json:"complaint"`
+	FeedbackSends    int `db:"feedback_sends" json:"feedback_sends"`         // to providers that report complaints (cmd/denma_feedback.go)
+	FeedbackComplain int `db:"feedback_complaint" json:"feedback_complaint"` // complaints since the record of e-mails starts
 	NewSubscribers   int `db:"new_subscribers" json:"new_subscribers"`
 }
 
@@ -142,6 +145,8 @@ SELECT
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'hard' AND created_at >= $1 AND created_at < $2) AS hard,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'soft' AND created_at >= $1 AND created_at < $2) AS soft,
 	(SELECT COUNT(*) FROM S.bounces WHERE type = 'complaint' AND created_at >= $1 AND created_at < $2) AS complaint,
+	(` + denmaFeedbackSendsSQL + `) AS feedback_sends,
+	` + denmaFeedbackComplaintsSQL + ` AS feedback_complaint,
 	(SELECT COUNT(*) FROM S.subscribers WHERE created_at >= $1 AND created_at < $2) AS new_subscribers`
 
 // denmaTrackedCampSQL is whether campaign c was sent with individual tracking.
@@ -219,12 +224,16 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 			if !denmaHasTable(db, x.Schema, "denma_no_consent") { // the center isn't loaded yet
 				info = strings.Replace(info, denmaNoConsentCountSQL, "0", 1)
 			}
+			period := denmaPeriodSQL
+			if !denmaHasTable(db, x.Schema, "denma_feedback_days") { // its features aren't installed yet
+				period = strings.Replace(strings.Replace(period, denmaFeedbackSendsSQL, "0", 1), denmaFeedbackComplaintsSQL, "0", 1)
+			}
 			err := db.Get(&f, denmaInSchema(info, x.Schema))
 			if err == nil {
-				err = db.Get(f.cur, denmaInSchema(denmaPeriodSQL, x.Schema), t[0], t[1])
+				err = db.Get(f.cur, denmaInSchema(period, x.Schema), t[0], t[1])
 			}
 			if err == nil {
-				err = db.Get(f.prev, denmaInSchema(denmaPeriodSQL, x.Schema), t[2], t[3])
+				err = db.Get(f.prev, denmaInSchema(period, x.Schema), t[2], t[3])
 			}
 			return f, err
 		})

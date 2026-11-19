@@ -45,7 +45,7 @@ export function hubFigures(p) {
     soft: p.soft,
     complaint: p.complaint,
     hardRate: rate(p.hard, p.sends),
-    complaintRate: rate(p.complaint, p.sends),
+    complaintRate: rate(p.feedback_complaint, p.feedback_sends), // as SES counts it (cmd/denma_feedback.go)
   };
 }
 

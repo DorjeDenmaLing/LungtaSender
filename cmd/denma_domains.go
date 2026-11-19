@@ -22,6 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
@@ -90,6 +91,8 @@ type denmaSES interface {
 	SetConfigSet(ctx context.Context, domain, set string) error
 	// SetNotifications sends its bounces and complaints, with their headers, to an SNS topic.
 	SetNotifications(ctx context.Context, domain, topic string) error
+	// Reputation is the account's status and bounce and complaint rates (cmd/denma_ses_reputation.go).
+	Reputation(ctx context.Context) (denmaSESReputation, error)
 	// No Delete: identities are deleted in the SES console.
 }
 
@@ -143,7 +146,7 @@ func denmaSESFor(ko *koanf.Koanf, db *sqlx.DB) (denmaSES, string) {
 	if c.real == nil {
 		c.real = map[string]*denmaRealSES{}
 	}
-	s := &denmaRealSES{region: region, v2: sesv2.NewFromConfig(cfg), v1: ses.NewFromConfig(cfg)}
+	s := &denmaRealSES{region: region, v2: sesv2.NewFromConfig(cfg), v1: ses.NewFromConfig(cfg), cw: cloudwatch.NewFromConfig(cfg)}
 	c.real[region] = s
 	return s, ""
 }
@@ -168,6 +171,7 @@ type denmaRealSES struct {
 	region string
 	v2     *sesv2.Client
 	v1     *ses.Client
+	cw     *cloudwatch.Client
 }
 
 func (s *denmaRealSES) Region() string { return s.region }

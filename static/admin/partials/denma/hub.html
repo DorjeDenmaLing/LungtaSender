@@ -40,7 +40,8 @@
 			<div class="denma-stat-grid denma-cols-5" :class="{ 'is-busy': busy }">
 				{{ template "denma-stat-cells" "bounce" }}
 			</div>
-			<p class="denma-stat-note">All centers send through the same mail servers. Amazon SES judges bounce and complaint rates across all of them together.</p>
+			<p class="denma-stat-note">All centers send through the same mail servers. Amazon SES judges bounce and complaint rates across all of them together.
+				<span :class="{ 'denma-ses-alert': sesAlert }" x-text="sesNote" data-testid="hub-ses"></span></p>
 		</article>
 	</div>
 </section>

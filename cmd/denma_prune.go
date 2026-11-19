@@ -67,7 +67,7 @@ func denmaPruneDB(db denmaExecer, center bool, timeout time.Duration, logf func(
 	if !center {
 		return sessions, 0
 	}
-	res, err = db.ExecContext(ctx, `DELETE FROM denma_messages WHERE sent_at < NOW() - make_interval(days => $1)`, denmaMessageDays)
+	res, err = db.ExecContext(ctx, denmaFeedbackPruneSQL, denmaMessageDays) // and keeps their day counts (cmd/denma_feedback.go)
 	if err != nil {
 		logf("denma: error deleting old records of sent e-mails: %v", err)
 		return sessions, 0

@@ -86,7 +86,7 @@
 {{/* Figure cells for the section named by the argument ("perf" or "bounce"). */}}
 {{ define "denma-stat-cells" }}
 <template x-for="m in {{ . }}.cells" :key="m.key">
-	<div class="denma-stat">
+	<div class="denma-stat" :data-key="m.key">
 		<div class="denma-stat-label" :title="m.help" x-text="m.label"></div>
 		<div class="denma-stat-value" x-text="m.value"></div>
 		<div class="denma-stat-change" :class="m.change && m.change.cls" :title="m.change && m.change.title">

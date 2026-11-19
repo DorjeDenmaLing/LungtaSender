@@ -130,6 +130,17 @@ export async function campaignOutcomes(ids) {
 const sumValues = (m) => Object.values(m).reduce((n, v) => n + v, 0);
 
 // Subscribers in one of the server's figures: { total, results }; opts: period, campaign, search.
+// feedbackSends is { cur, prev }: emails sent to providers that report complaints in the periods p.
+export function feedbackSends(p) {
+  const q = new URLSearchParams({
+    from: p.cur.start.toISOString(),
+    to: p.cur.end.toISOString(),
+    prev_from: p.prev.start.toISOString(),
+    prev_to: p.prev.end.toISOString(),
+  });
+  return getJSON(`/denma/stats/feedback?${q}`);
+}
+
 export function subscriberStat(metric, opts = {}) {
   const q = new URLSearchParams({ metric, per_page: '1' });
   if (opts.period) {
@@ -209,7 +220,7 @@ export const BOUNCE_METRICS = [
   ['hardRate', 'Hard bounce rate', 'pct2', 'Hard bounces as a share of sends. Amazon SES reviews accounts at 5% and can pause sending at 10%.', [0.02, 0.05]],
   ['soft', 'Soft bounces', 'count', 'Temporary failures (mailbox full, server busy). listmonk records these but keeps sending.'],
   ['complaint', 'Complaints', 'count', 'People who marked an email as spam. listmonk blocklists them.'],
-  ['complaintRate', 'Complaint rate', 'pct2', 'Complaints as a share of sends. Amazon SES reviews accounts at 0.1% and can pause sending at 0.5%; Gmail expects under 0.3%.', [0.0005, 0.001]],
+  ['complaintRate', 'Complaint rate', 'pct2', "Complaints as a share of emails to Outlook, Hotmail, Yahoo, AOL and Comcast, which report them (Gmail doesn't), as Amazon SES counts them. SES reviews accounts at 0.1% and can pause sending at 0.5%.", [0.0005, 0.001]],
 ];
 
 export function health(v, bands) {

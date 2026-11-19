@@ -811,6 +811,11 @@ section.analytics {
 .denma-hub .denma-selected td {
   background: var(--muted);
 }
+/* The SES account under review or paused. */
+.denma-ses-alert {
+  color: var(--tone-amber);
+  font-weight: 600;
+}
 /* The dashboard's note of centers that didn't start. */
 .denma-hub-alert {
   display: flex;
