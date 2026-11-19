@@ -138,7 +138,7 @@ export function feedbackSends(p) {
     prev_from: p.prev.start.toISOString(),
     prev_to: p.prev.end.toISOString(),
   });
-  return getJSON(`/denma/stats/feedback?${q}`);
+  return getJSON(`/denma/stats/complaint-sends?${q}`);
 }
 
 export function subscriberStat(metric, opts = {}) {

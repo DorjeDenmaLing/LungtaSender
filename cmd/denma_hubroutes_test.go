@@ -175,3 +175,18 @@ func TestDenmaHubRoutesClassified(t *testing.T) {
 		}
 	}
 }
+
+// No route has "feedback" in its path: the site's Cloudflare challenges any such request, which the admin's fetches can't answer.
+func TestDenmaRoutesNoFeedbackWord(t *testing.T) {
+	ko := koanf.New(".")
+	_ = ko.Set("denma.multi_center", true)
+	cfg := &Config{EnablePublicArchive: true, BounceWebhooksEnabled: true, EnablePublicSubPage: true}
+	a := &App{ko: ko, cfg: cfg, urlCfg: &UrlConfig{LoginURL: "/login", AdminPath: "/"}, auth: &auth.Auth{}}
+	e := echo.New()
+	initHTTPHandlers(e, a)
+	for _, r := range e.Routes() {
+		if strings.Contains(strings.ToLower(r.Path), "feedback") {
+			t.Errorf("%s %s has \"feedback\" in its path", r.Method, r.Path)
+		}
+	}
+}
