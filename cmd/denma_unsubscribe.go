@@ -47,7 +47,7 @@ func (a *App) denmaUnsubscribe(subUUID, campUUID string, _ bool) error {
 	}
 	// listmonk's unsubscribe-by-campaign, blocklisting: every list, and the address's variants (denma_canon_hash).
 	if _, err := tx.Exec(`WITH sub AS (
-			UPDATE subscribers SET status = 'blocklisted'
+			UPDATE subscribers SET status = 'blocklisted', updated_at = NOW()
 			WHERE denma_canon_hash(email) = (SELECT denma_canon_hash(email) FROM subscribers WHERE uuid = $1)
 			RETURNING id
 		)
