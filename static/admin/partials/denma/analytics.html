@@ -267,7 +267,9 @@
 			<p>Clicks on the e-mail's links. Individual tracking is off, so someone who clicked three times counts three times.</p>
 			{{- end }}
 		{{- else if eq .Key "bounces" }}
-			<p>E-mails that couldn't be delivered, and spam complaints: hard bounces (the address doesn't exist), soft bounces (a passing failure, such as a full mailbox) and complaints (marked as spam). Each one recorded counts.</p>
+			<p>E-mails that couldn't be delivered: hard bounces (the address doesn't exist; it's blocklisted) and soft bounces (a passing failure, such as a full mailbox). Each one recorded counts. Complaints are in their own card.</p>
+		{{- else if eq .Key "complaints" }}
+			<p>People who marked the e-mail as spam. A complaint is final: they can't be subscribed in this center again. Mail providers may stop delivering a sender's mail when complaints pass 0.1% of what it sends.</p>
 		{{- else if eq .Key "links" }}
 			{{- if .Individual }}
 			<p>Each link in the e-mail, with how many people clicked it. Someone who clicked it more than once, or in more than one of these campaigns, counts once.</p>
@@ -297,4 +299,35 @@
 		</tbody>
 	</table>
 </div>
+{{- end }}
+
+{{ define "denma-explore-complaints" -}}{{/* cmd/denma_explore_bounces.go */}}
+{{- $d := .Data.Denma -}}
+<article class="card denma-complaints" data-testid="explore-complaints">
+	<h4>Complaints{{ if gt $d.ComplaintCount 0 }} <span class="text-lighter">({{ FormatNumber $d.ComplaintCount }})</span>{{ end }}{{ template "denma-analytics-help" dict "Key" "complaints" }}</h4>
+	{{- if $d.Complaints }}
+	<div class="table-wrapper">
+		<table>
+			<thead>
+				<tr><th>When</th><th>Campaign</th>{{ if $d.ComplaintsWho }}<th>Who</th>{{ end }}</tr>
+			</thead>
+			<tbody>
+				{{- range $d.Complaints }}
+				<tr>
+					<td data-label="When"><span class="nowrap">{{ .Day $d.Zone }}</span><br><small class="text-light nowrap">{{ .Time $d.Zone }}</small></td>
+					<td data-label="Campaign">{{ if .AutomationID }}Automation: {{ end }}{{ .Of }}</td>
+					{{- if $d.ComplaintsWho }}
+					<td data-label="Who">{{ if .SubscriberID }}<a href="{{ URI (printf "/admin/subscribers/%d" .SubscriberID) }}">{{ with .Name }}{{ . }}{{ else }}{{ .Email }}{{ end }}</a>{{ if .Name }}<br><small class="text-light denma-email">{{ .Email }}</small>{{ end }}{{ else }}<small class="text-light">Not kept for automations</small>{{ end }}</td>
+					{{- end }}
+				</tr>
+				{{- end }}
+			</tbody>
+		</table>
+	</div>
+	{{- if gt $d.ComplaintCount (len $d.Complaints) }}<small data-hint>The latest {{ len $d.Complaints }} are shown.</small>{{ end }}
+	{{- if not $d.ComplaintsWho }}<small data-hint>Who complained is shown to those who can see the center's bounces.</small>{{ end }}
+	{{- else }}
+		<p class="text-light">No complaints between these dates.</p>
+	{{- end }}
+</article>
 {{- end }}

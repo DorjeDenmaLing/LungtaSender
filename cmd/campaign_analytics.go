@@ -123,6 +123,9 @@ func (a *App) ViewCampaignAnalytics(c echo.Context) error {
 	if err := a.denmaExploreAutomations(c, &data, from, to); err != nil { // denma: cmd/denma_auto_reports.go
 		return err
 	}
+	if err := a.denmaExploreBounces(&data, from, to); err != nil { // denma: bounces by type, complaints apart (cmd/denma_explore_bounces.go)
+		return err
+	}
 	return c.Render(http.StatusOK, "admin-campaign-analytics", data)
 }
 

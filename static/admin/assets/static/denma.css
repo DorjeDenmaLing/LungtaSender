@@ -568,6 +568,17 @@ section.analytics {
         }
     }
 
+    /* Explore's complaints: the time on two lines, addresses wrapped. */
+    .denma-complaints {
+        .nowrap {
+            white-space: nowrap;
+        }
+
+        .denma-email {
+            overflow-wrap: anywhere;
+        }
+    }
+
     .denma-links {
         td:first-child {
             overflow-wrap: anywhere;

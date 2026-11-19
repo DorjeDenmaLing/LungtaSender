@@ -277,6 +277,14 @@ type denmaExplore struct {
 	Views       []denmaExploreCount `json:"views"`
 	Clicks      []denmaExploreCount `json:"clicks"`
 	Bounces     []denmaExploreCount `json:"bounces"`
+
+	// The campaigns' and automations' bounces by type, and their complaints (cmd/denma_explore_bounces.go).
+	TypedBounces   []denmaExploreBounce    `json:"typed_bounces"`
+	Complaints     []denmaExploreComplaint `json:"-"`
+	ComplaintCount int                     `json:"-"`
+	ComplaintsMax  int                     `json:"-"`
+	ComplaintsWho  bool                    `json:"-"` // names and addresses shown
+	Zone           *time.Location          `json:"-"`
 }
 
 // denmaExploreCountSQL counts a table's rows per automation and bucket, as get-campaign-view-counts does.

@@ -53,6 +53,7 @@
 			{{ template "analytics-chart" dict "Title" (.L.T "campaigns.views") "Count" $d.Counts.Views "Key" "views" "Individual" $d.IndividualTracking }}{{/* denma: Individual, for its help */}}
 			{{ template "analytics-chart" dict "Title" (.L.T "campaigns.clicks") "Count" $d.Counts.Clicks "Key" "clicks" "Individual" $d.IndividualTracking }}{{/* denma: Individual, for its help */}}
 			{{ template "analytics-chart" dict "Title" (.L.T "globals.terms.bounces") "Count" $d.Counts.Bounces "Key" "bounces" "Individual" $d.IndividualTracking }}{{/* denma: Individual, for its help */}}
+			{{ template "denma-explore-complaints" . }}{{/* denma: who complained and when (cmd/denma_explore_bounces.go) */}}
 
 			<article class="card">
 				<h4>{{ .L.T "analytics.links" }}{{ template "denma-analytics-help" dict "Key" "links" "Individual" $d.IndividualTracking }}</h4>{{/* denma: help, partials/denma/analytics.html */}}

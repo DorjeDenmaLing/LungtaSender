@@ -20,6 +20,8 @@ function themeColors() {
     muted: get('--muted-foreground'),
     grid: get('--border'),
     card: get('--card'),
+    hard: get('--danger'),
+    soft: get('--warning'),
     series: Array.from({ length: SERIES }, (_, i) => get(`--denma-series-${i + 1}`)),
   };
   probe.remove();
@@ -95,44 +97,44 @@ function draw(canvas, cfg) {
 // A row's campaign or automation, as the series' keys.
 const rowKey = (r) => (r.automation_id ? `a${r.automation_id}` : `c${r.campaign_id}`);
 
-// Bars of one figure per bucket, stacked by camp (camps: { key, label }), and its totals donut.
-function renderCounts(key, camps, rows, b, c) {
+// Bars of one figure per bucket, stacked by camp (camps: { key, label }) or by stack ({ label, color, has(row) }),
+// and its totals donut by camp.
+function renderCounts(key, camps, rows, b, c, stack) {
   const canvas = document.getElementById(`chart-${key}`);
   if (!canvas) return;
   const index = new Map(b.keys.map((t, i) => [t, i]));
   const years = new Set(b.keys.map((t) => new Date(t + b.off).getUTCFullYear())).size > 1;
   const lbl = labeler(b, years);
   const many = camps.length > 1;
-  const datasets = camps.map((cm, n) => {
+  const bars = (label, color, has) => {
     const data = new Array(b.keys.length).fill(0);
     rows.forEach((r) => {
       const i = index.get(b.floor(Date.parse(r.timestamp)));
-      if (rowKey(r) === cm.key && i !== undefined) data[i] += r.count;
+      if (has(r) && i !== undefined) data[i] += r.count;
     });
     return {
-      label: cm.label,
-      data,
-      backgroundColor: c.series[n % SERIES],
-      borderRadius: 2,
-      maxBarThickness: 32,
+      label, data, backgroundColor: color, borderRadius: 2, maxBarThickness: 32,
     };
-  });
+  };
+  const datasets = camps.map((cm, n) => bars(cm.label, c.series[n % SERIES], (r) => rowKey(r) === cm.key));
+  const stacked = stack ? stack.map((st) => bars(st.label, st.color, st.has)) : datasets;
+  const legend = many || !!stack;
 
   draw(canvas, {
     type: 'bar',
-    data: { labels: b.keys, datasets },
+    data: { labels: b.keys, datasets: stacked },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 300 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: many, position: 'bottom', labels: { color: c.text, usePointStyle: true, pointStyle: 'rectRounded' } },
+        legend: { display: legend, position: 'bottom', labels: { color: c.text, usePointStyle: true, pointStyle: 'rectRounded' } },
         tooltip: {
           ...tooltip(c),
           callbacks: {
             title: (items) => lbl.long(b.keys[items[0].dataIndex]),
-            label: (item) => (many ? ` ${item.dataset.label}: ${item.raw.toLocaleString()}` : ` ${item.raw.toLocaleString()}`),
+            label: (item) => (legend ? ` ${item.dataset.label}: ${item.raw.toLocaleString()}` : ` ${item.raw.toLocaleString()}`),
           },
         },
       },
@@ -203,11 +205,15 @@ function render(d) {
   const camps = (d.campaigns || []).map((cm) => ({ key: `c${cm.id}`, label: `#${cm.id}: ${cm.name}` }))
     .concat((a.automations || []).map((au) => ({ key: `a${au.id}`, label: `Automation: ${au.name}` })));
   const all = {};
-  ['views', 'clicks', 'bounces'].forEach((k) => { all[k] = [...(d[k] || []), ...(a[k] || [])]; });
+  ['views', 'clicks'].forEach((k) => { all[k] = [...(d[k] || []), ...(a[k] || [])]; });
+  all.bounces = a.typed_bounces || []; // hard and soft, without complaints (cmd/denma_explore_bounces.go)
   const b = bucketing(all);
   renderCounts('views', camps, all.views, b, c);
   renderCounts('clicks', camps, all.clicks, b, c);
-  renderCounts('bounces', camps, all.bounces, b, c);
+  renderCounts('bounces', camps, all.bounces, b, c, [
+    { label: 'Hard', color: c.hard, has: (r) => r.type === 'hard' },
+    { label: 'Soft', color: c.soft, has: (r) => r.type === 'soft' },
+  ]);
 }
 
 // Draws the charts; returns true, so listmonk's aren't drawn.

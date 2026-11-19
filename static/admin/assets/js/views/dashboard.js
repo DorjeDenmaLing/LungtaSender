@@ -4,7 +4,7 @@ const FONT_FAMILY = "'Geist', sans-serif";
 
 // Format an ISO date ('2024-06-01') to a short 'DD Mon' label.
 function label(iso) {
-  const d = new Date(iso);
+  const d = new Date(`${iso}T00:00`); // denma: the day as given, not UTC midnight
   if (Number.isNaN(d.getTime())) {
     return iso;
   }

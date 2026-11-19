@@ -81,7 +81,7 @@ func (a *App) ViewDashboard(c echo.Context) error {
 		return err
 	}
 
-	charts, err := a.core.GetDashboardCharts()
+	charts, err := a.denmaDashboardCharts() // denma: days in the center's time zone (cmd/denma_dashboard_charts.go)
 	if err != nil {
 		return err
 	}
