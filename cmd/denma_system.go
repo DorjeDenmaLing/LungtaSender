@@ -19,7 +19,7 @@ import (
 )
 
 // denmaSourceURL is the fork's source, offered to the running version's users.
-const denmaSourceURL = "https://github.com/DorjeDenmaLing/listmonk"
+const denmaSourceURL = "https://github.com/DorjeDenmaLing/LungtaSender"
 
 // denmaBuildCommit finds the commit in a build string.
 var denmaBuildCommit = regexp.MustCompile(`(?:#|dev |ddl )([0-9a-f]{7,40})\b`)
