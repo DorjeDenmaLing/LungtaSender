@@ -2468,6 +2468,10 @@ section.analytics {
     }
   }
 
+  .denma-domain-senders {
+    overflow-wrap: anywhere;
+  }
+
   .denma-domain-add-center {
     max-width: 26em;
   }

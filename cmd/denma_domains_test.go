@@ -33,6 +33,45 @@ func TestDenmaSenderDomain(t *testing.T) {
 	}
 }
 
+// A center sends as any address at a domain only when it's given "any"; otherwise only as its addresses there.
+func TestDenmaSenderAllowed(t *testing.T) {
+	doms := []denmaCenterDomain{
+		{Domain: "halifax.example", Any: true},
+		{Domain: "shambhala.org", Senders: []string{"halifax@shambhala.org", "programs-halifax@shambhala.org"}},
+		{Domain: "empty.example", Senders: []string{}},
+	}
+	ok := []string{"anyone@halifax.example", `"Halifax" <Halifax@Shambhala.ORG>`, "programs-halifax@shambhala.org"}
+	bad := []string{"boulder@shambhala.org", "president@shambhala.org", "news@empty.example", "news@other.example"}
+	for _, f := range ok {
+		if err := denmaSenderAllowed(f, doms); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+	for _, f := range bad {
+		if denmaSenderAllowed(f, doms) == nil {
+			t.Errorf("%s: accepted", f)
+		}
+	}
+}
+
+func TestDenmaParseSenders(t *testing.T) {
+	r, err := denmaParseSenders("shambhala.org", denmaSenderRule{Senders: []string{" Halifax@Shambhala.org ", `"H" <halifax@shambhala.org>`, "", "a@shambhala.org"}})
+	if err != nil || len(r.Senders) != 2 || r.Senders[0] != "a@shambhala.org" || r.Senders[1] != "halifax@shambhala.org" {
+		t.Errorf("tidied: %v %v", r.Senders, err)
+	}
+	if r, _ := denmaParseSenders("shambhala.org", denmaSenderRule{Any: true, Senders: []string{"x@other.org"}}); !r.Any || r.Senders != nil || r.value() != nil {
+		t.Errorf("any: %+v", r)
+	}
+	if r, _ := denmaParseSenders("shambhala.org", denmaSenderRule{}); r.Any || r.Senders == nil {
+		t.Errorf("none: %+v", r)
+	}
+	for _, s := range []string{"x@other.org", "x@sub.shambhala.org", "not an address"} {
+		if _, err := denmaParseSenders("shambhala.org", denmaSenderRule{Senders: []string{s}}); err == nil {
+			t.Errorf("%s: accepted", s)
+		}
+	}
+}
+
 func TestDenmaCheckMailFrom(t *testing.T) {
 	ok := []string{"bounce.example.org", "a.b.example.org"}
 	bad := []string{"example.org", "bounce.other.org", "bounceexample.org", "bad_name.example.org"}

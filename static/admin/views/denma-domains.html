@@ -157,8 +157,13 @@
 					<div data-field>
 						<label for="add-center">For the center</label>
 						{{ template "denma-center-picker" dict "ID" "add-center" "TestID" "add-center" }}
-						<small data-hint>Its senders can then be at this domain. More centers can be added on the domain's page.</small>
+						<small data-hint>More centers can be added on the domain's page.</small>
 					</div>
+					<template x-if="center">
+						<div class="vstack gap-3">
+							{{ template "denma-domain-senders" dict "Model" "add" "TestID" "add-senders" }}
+						</div>
+					</template>
 				</section>
 				<footer class="dialog-foot hstack gap-3 justify-end">
 					<button type="button" class="outline" @click="$refs.addDialog.close()">{{ .L.T "globals.buttons.close" }}</button>

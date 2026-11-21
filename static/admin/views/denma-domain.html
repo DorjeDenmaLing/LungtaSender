@@ -107,14 +107,19 @@
 
 		<article class="card vstack gap-3" data-testid="domain-centers">
 			<h3>Centers</h3>
-			<p class="text-light">Their senders (on their Config pages, campaigns and automations) can be at {{ (index $d.Domains 0).Domain }}.<span x-show="d.hub"> It's also the hub's sender's domain (Settings &rarr; General).</span></p>
+			<p class="text-light">Each sends from {{ (index $d.Domains 0).Domain }} only as the addresses it's given here (Config, campaigns, automations, API keys).<span x-show="d.hub"> It's also the hub's sender's domain (Settings &rarr; General).</span></p>
 			<ul class="denma-domain-centers">
 				<template x-for="c in d.centers" :key="c.slug">
-					<li class="hstack gap-2" data-testid="domain-center" :data-slug="c.slug">
-						<span x-text="c.name"></span>
-						<template x-if="isSender(c)"><span class="badge small">Its sender</span></template>
-						<button type="button" class="ghost small icon" :aria-label="`Remove ${c.name}`" :title="isSender(c) ? 'Its sender is at this domain: change it first' : 'Remove'"
-							:disabled="isSender(c) || isLoading('domain')" @click="onRemoveCenter(c)" data-testid="btn-remove-center">{{ Icon "x" }}</button>
+					<li class="vstack" data-testid="domain-center" :data-slug="c.slug">
+						<div class="hstack gap-2">
+							<span x-text="c.name"></span>
+							<template x-if="isSender(c)"><span class="badge small">Its sender</span></template>
+							<button type="button" class="ghost small icon" :aria-label="`Change ${c.name}'s addresses`" title="Change its addresses"
+								:disabled="isLoading('domain')" @click="onEditSenders(c)" data-testid="btn-edit-senders">{{ Icon "edit-2" }}</button>
+							<button type="button" class="ghost small icon" :aria-label="`Remove ${c.name}`" :title="isSender(c) ? 'Its sender is at this domain: change it first' : 'Remove'"
+								:disabled="isSender(c) || isLoading('domain')" @click="onRemoveCenter(c)" data-testid="btn-remove-center">{{ Icon "x" }}</button>
+						</div>
+						<small class="denma-domain-senders" :class="{ 'text-light': c.any || !c.senders.length }" x-text="senderWords(c)" data-testid="domain-senders"></small>
 					</li>
 				</template>
 				<li x-show="!d.centers.length" class="text-light">None yet.</li>
@@ -137,6 +142,21 @@
 				<footer class="dialog-foot hstack gap-3 justify-end">
 					<button type="button" class="outline" @click="$refs.removeDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
 					<button type="submit" data-variant="danger" data-testid="btn-remove-save" :disabled="isLoading('domain')">Remove</button>
+				</footer>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog x-ref="sendersDialog">
+		<form @submit.prevent="onSubmitSenders">
+			<div class="dialog-card content">
+				<header class="dialog-head"><h4 class="dialog-title" x-text="`${editing.name} at ${d.domain}`"></h4></header>
+				<section class="dialog-body vstack gap-3">
+					{{ template "denma-domain-senders" dict "Model" "editing" "TestID" "senders" }}
+				</section>
+				<footer class="dialog-foot hstack gap-3 justify-end">
+					<button type="button" class="outline" @click="$refs.sendersDialog.close()">{{ .L.T "globals.buttons.close" }}</button>
+					<button type="submit" data-variant="primary" data-testid="btn-senders-save" :disabled="isLoading('domain')" :aria-busy="isLoading('domain')">Save</button>
 				</footer>
 			</div>
 		</form>

@@ -34,6 +34,9 @@ const domainURL = (domain) => `${urls.admin}/domains/${encodeURIComponent(domain
 
 const GMAIL_CLASS = { warning: 'denma-warn', danger: 'text-danger' };
 
+// A rule's addresses, from the form's lines.
+const senderLines = (text) => text.split(/[\r\n,;]+/).map((s) => s.trim()).filter(Boolean);
+
 // A row for centerTable: name is the domain, slug what's found, state the status.
 function domainRow(d) {
   const names = d.centers.map((c) => c.name);
@@ -68,7 +71,7 @@ function denmaDomains() {
     ...centerPicker([{ slug: '', name: 'None yet' }]),
     centers: window._denmaCenters || [],
     center: '',
-    add: { domain: '', mail_from: '' },
+    add: { domain: '', mail_from: '', any: false, text: '' },
     mailFromEdited: false,
 
     rows: (window._denmaDomains || []).map(domainRow),
@@ -127,7 +130,7 @@ function denmaDomains() {
     },
 
     onAdd() {
-      this.add = { domain: '', mail_from: '' };
+      this.add = { domain: '', mail_from: '', any: false, text: '' };
       this.mailFromEdited = false;
       this.center = '';
       this.$refs.addDialog.showModal();
@@ -148,6 +151,8 @@ function denmaDomains() {
         domain: this.add.domain,
         mail_from: this.add.mail_from,
         centers: this.center ? [this.center] : [],
+        any: this.add.any,
+        senders: senderLines(this.add.text),
       });
       this.$refs.addDialog.close();
       const toast = data.warning
@@ -167,6 +172,7 @@ function denmaDomain() {
     centers: [],
     center: '',
     mailFrom: '',
+    editing: { slug: '', name: '', any: false, text: '' },
 
     init() {
       this.setCenters();
@@ -219,6 +225,24 @@ function denmaDomain() {
       return this.d.senders.some((s) => s.slug === c.slug);
     },
 
+    senderWords(c) {
+      if (c.any) return `Any address at ${this.d.domain}`;
+      return c.senders.length ? c.senders.join(', ') : 'No addresses yet: it can’t send from here';
+    },
+
+    onEditSenders(c) {
+      this.editing = { slug: c.slug, name: c.name, any: c.any, text: c.senders.join('\n') };
+      this.$refs.sendersDialog.showModal();
+    },
+
+    async onSubmitSenders() {
+      const { slug, any, text } = this.editing;
+      const data = await api('domain', `/denma/domains/${encodeURIComponent(this.d.domain)}/centers/${encodeURIComponent(slug)}`, 'PUT', { any, senders: senderLines(text) });
+      this.$refs.sendersDialog.close();
+      this.update(data);
+      u.toast('Saved.', 'success');
+    },
+
     // The records still to add or change.
     needed() {
       return (this.d.state.records || []).filter((r) => r.status !== 'ok' && r.value);
@@ -267,6 +291,8 @@ function denmaDomain() {
       this.center = '';
       if (!slug) return;
       this.update(await api('domain', `/denma/domains/${encodeURIComponent(this.d.domain)}/centers`, 'POST', { slug }));
+      const c = this.d.centers.find((x) => x.slug === slug);
+      if (c) this.onEditSenders(c);
     },
 
     async onRemoveCenter(c) {

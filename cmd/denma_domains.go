@@ -15,6 +15,7 @@ import (
 	"net/textproto"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -57,7 +58,10 @@ func denmaInitDomains(db *sqlx.DB) error {
 			domain    TEXT NOT NULL REFERENCES denma.sending_domains(domain) ON DELETE CASCADE,
 			center_id INTEGER NOT NULL REFERENCES denma.centers(id) ON DELETE CASCADE,
 			PRIMARY KEY (domain, center_id)
-		);` + denmaProviderSchemaSQL) // cmd/denma_provider_stats.go
+		);
+		-- The addresses the center may send as there; NULL: any.
+		ALTER TABLE denma.sending_domain_centers ADD COLUMN IF NOT EXISTS senders TEXT[] NULL;
+		ALTER TABLE denma.sending_domain_centers ALTER COLUMN senders SET DEFAULT '{}';` + denmaProviderSchemaSQL) // cmd/denma_provider_stats.go
 	return err
 }
 
@@ -805,6 +809,65 @@ func denmaSenderDomain(from string) string {
 	return strings.ToLower(addr.Address[at+1:])
 }
 
+// denmaSenderAddress is the lowercase address of a From, or "".
+func denmaSenderAddress(from string) string {
+	addr, err := mail.ParseAddress(strings.TrimSpace(from))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(addr.Address)
+}
+
+// denmaSenderRule is who a center may send as at one of its domains: any address, or those in Senders.
+type denmaSenderRule struct {
+	Any     bool     `json:"any"`
+	Senders []string `json:"senders"`
+}
+
+// value is the rule's senders column: NULL for any address.
+func (r denmaSenderRule) value() any {
+	if r.Any {
+		return nil
+	}
+	if r.Senders == nil {
+		return pq.StringArray{}
+	}
+	return pq.StringArray(r.Senders)
+}
+
+// allows reports whether the rule lets a center send as from.
+func (r denmaSenderRule) allows(from string) bool {
+	return r.Any || slices.Contains(r.Senders, denmaSenderAddress(from))
+}
+
+// denmaParseSenders checks and tidies a rule's addresses: at the domain, lowercase, sorted, once each.
+func denmaParseSenders(dom string, r denmaSenderRule) (denmaSenderRule, error) {
+	if r.Any {
+		return denmaSenderRule{Any: true}, nil
+	}
+	out := []string{}
+	for _, s := range r.Senders {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+		addr := denmaSenderAddress(s)
+		if addr == "" || len(addr) > 254 {
+			return r, fmt.Errorf("%q isn't an e-mail address.", strings.TrimSpace(s))
+		}
+		if denmaSenderDomain(addr) != dom {
+			return r, fmt.Errorf("%s isn't at %s.", addr, dom)
+		}
+		if !slices.Contains(out, addr) {
+			out = append(out, addr)
+		}
+	}
+	if len(out) > 100 {
+		return r, errors.New("A center can have at most 100 addresses at a domain.")
+	}
+	sort.Strings(out)
+	return denmaSenderRule{Senders: out}, nil
+}
+
 // denmaCheckMailFrom checks a bounce subdomain: one or more labels below the domain.
 func denmaCheckMailFrom(mailFrom, domain string) error {
 	if !reDenmaDomain.MatchString(mailFrom) || !strings.HasSuffix(mailFrom, "."+domain) || len(mailFrom) > 253 {
@@ -907,6 +970,11 @@ func (d *denmaCenters) domainCampaigns(dom, slug string) ([]denmaDomainCampaign,
 
 // denmaCampaignsOnDomain refuses to take a domain from centers whose campaigns, automations or keys use it.
 func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
+	return denmaCampaignsUsing(camps, "from "+dom)
+}
+
+// denmaCampaignsUsing refuses a change while campaigns, automations or keys send as what it takes away.
+func denmaCampaignsUsing(camps []denmaDomainCampaign, what string) error {
 	if len(camps) == 0 {
 		return nil
 	}
@@ -918,8 +986,8 @@ func denmaCampaignsOnDomain(camps []denmaDomainCampaign, dom string) error {
 		}
 		names = append(names, fmt.Sprintf("%s %q (%s)", c.What, c.Name, c.Center))
 	}
-	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("These send from %s: %s. First change their sender; or unschedule or pause a campaign, "+
-		"or wait until it's finished; turn an automation off; delete an API key.", dom, strings.Join(names, ", ")))
+	return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("These send %s: %s. First change their sender; or unschedule or pause a campaign, "+
+		"or wait until it's finished; turn an automation off; delete an API key.", what, strings.Join(names, ", ")))
 }
 
 // adoptSenders adds the domains of existing senders (centers' and the hub's) for their centers.
@@ -928,7 +996,7 @@ func (d *denmaCenters) adoptSenders() error {
 	if err != nil {
 		return err
 	}
-	add := func(domain string, centerID int) error {
+	add := func(domain string, centerID int, from string) error {
 		if domain == "" || !reDenmaDomain.MatchString(domain) {
 			return nil
 		}
@@ -940,16 +1008,16 @@ func (d *denmaCenters) adoptSenders() error {
 			lo.Printf("denma: added %s to the sending domains (a sender's)", domain)
 		}
 		if centerID > 0 {
-			_, err = d.db().Exec(`INSERT INTO denma.sending_domain_centers (domain, center_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, domain, centerID)
+			err = d.linkCenter(domain, centerID, denmaSenderRule{Senders: []string{denmaSenderAddress(from)}})
 		}
 		return err
 	}
 	for _, s := range senders {
-		if err := add(s.Domain, s.ID); err != nil {
+		if err := add(s.Domain, s.ID, s.From); err != nil {
 			return err
 		}
 	}
-	return add(denmaSenderDomain(d.current().ko.String("app.from_email")), 0)
+	return add(denmaSenderDomain(d.current().ko.String("app.from_email")), 0, "")
 }
 
 // watchDomains adds the senders' domains and checks those due (2 minutes, 15 minutes, then daily).
@@ -1006,13 +1074,32 @@ func (d *denmaCenters) domainCanSend(domain string) bool {
 	return ok
 }
 
-// addDomain adds a domain for centers (IDs), sets it up in SES and checks it; added even if SES fails.
-func (d *denmaCenters) addDomain(domain, mailFrom string, centers []int) (denmaDomainState, error) {
+// linkCenter lets a center send from a domain, as its rule says and as its sender there, unless it already can.
+func (d *denmaCenters) linkCenter(domain string, centerID int, rule denmaSenderRule) error {
+	if !rule.Any {
+		senders, err := d.centerSenders()
+		if err != nil {
+			return err
+		}
+		for _, s := range senders {
+			if a := denmaSenderAddress(s.From); s.ID == centerID && s.Domain == domain && !slices.Contains(rule.Senders, a) {
+				rule.Senders = append(slices.Clone(rule.Senders), a)
+				sort.Strings(rule.Senders)
+			}
+		}
+	}
+	_, err := d.db().Exec(`INSERT INTO denma.sending_domain_centers (domain, center_id, senders) VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING`, domain, centerID, rule.value())
+	return err
+}
+
+// addDomain adds a domain for centers (IDs) with their rule, sets it up in SES and checks it; added even if SES fails.
+func (d *denmaCenters) addDomain(domain, mailFrom string, centers []int, rule denmaSenderRule) (denmaDomainState, error) {
 	if _, err := d.db().Exec(`INSERT INTO denma.sending_domains (domain, mail_from) VALUES ($1, $2) ON CONFLICT DO NOTHING`, domain, mailFrom); err != nil {
 		return denmaDomainState{}, err
 	}
 	for _, id := range centers {
-		if _, err := d.db().Exec(`INSERT INTO denma.sending_domain_centers (domain, center_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, domain, id); err != nil {
+		if err := d.linkCenter(domain, id, rule); err != nil {
 			return denmaDomainState{}, err
 		}
 	}
@@ -1044,11 +1131,19 @@ func initDenmaDomainAPIHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/domains/:domain/check", a.DenmaCheckDomain)
 	g.POST("/api/denma/domains/:domain/fix", a.DenmaFixDomain)
 	g.POST("/api/denma/domains/:domain/centers", a.DenmaAddDomainCenter)
+	g.PUT("/api/denma/domains/:domain/centers/:slug", a.DenmaSetDomainSenders)
 	g.DELETE("/api/denma/domains/:domain/centers/:slug", a.DenmaRemoveDomainCenter)
 	g.DELETE("/api/denma/domains/:domain", a.DenmaDeleteDomain)
 	g.PUT("/api/denma/gmail", a.DenmaGmailSave) // cmd/denma_provider_stats.go
 	g.DELETE("/api/denma/gmail", a.DenmaGmailDisconnect)
 	g.POST("/api/denma/gmail/fetch", a.DenmaGmailFetch)
+}
+
+// denmaDomainCenter is a center a domain is for, and who it may send as there.
+type denmaDomainCenter struct {
+	denmaOtherCenter
+	Any     bool           `db:"any_sender" json:"any"`
+	Senders pq.StringArray `db:"senders" json:"senders"`
 }
 
 // denmaDomainRow is a domain on the pages.
@@ -1060,7 +1155,7 @@ type denmaDomainRow struct {
 	Badge     string             `json:"badge"`
 	CheckedAt *time.Time         `json:"checked_at"`
 	CreatedAt time.Time          `json:"created_at"`
-	Centers   []denmaOtherCenter `json:"centers"`    // it's for
+	Centers   []denmaDomainCenter `json:"centers"`   // it's for
 	Senders   []denmaOtherCenter `json:"senders"`    // whose sender is on it
 	Hub       bool               `json:"hub"`        // the hub's sender is on it
 	GmailRate *float64           `json:"gmail_rate"` // its latest day's Gmail spam rate (cmd/denma_provider_stats.go)
@@ -1082,9 +1177,10 @@ func (d *denmaCenters) domainRows(only string) ([]denmaDomainRow, error) {
 	}
 	var links []struct {
 		Domain string `db:"domain"`
-		denmaOtherCenter
+		denmaDomainCenter
 	}
-	if err := d.db().Select(&links, `SELECT dc.domain, c.slug, c.name FROM denma.sending_domain_centers dc
+	if err := d.db().Select(&links, `SELECT dc.domain, c.slug, c.name, dc.senders IS NULL AS any_sender,
+		COALESCE(dc.senders, '{}') AS senders FROM denma.sending_domain_centers dc
 		JOIN denma.centers c ON c.id = dc.center_id WHERE $1 = '' OR dc.domain = $1 ORDER BY LOWER(c.name)`, only); err != nil {
 		return nil, err
 	}
@@ -1106,7 +1202,7 @@ func (d *denmaCenters) domainRows(only string) ([]denmaDomainRow, error) {
 	out := make([]denmaDomainRow, len(rows))
 	for i, r := range rows {
 		x := denmaDomainRow{Domain: r.Domain, MailFrom: r.MailFrom, CheckedAt: r.CheckedAt, CreatedAt: r.CreatedAt,
-			Centers: []denmaOtherCenter{}, Senders: []denmaOtherCenter{}, Hub: r.Domain == hub}
+			Centers: []denmaDomainCenter{}, Senders: []denmaOtherCenter{}, Hub: r.Domain == hub}
 		_ = json.Unmarshal(r.State, &x.State)
 		if r.CheckedAt == nil {
 			x.State.Status = ""
@@ -1115,7 +1211,7 @@ func (d *denmaCenters) domainRows(only string) ([]denmaDomainRow, error) {
 		x.Label, x.Badge = s[0], s[1]
 		for _, l := range links {
 			if l.Domain == r.Domain {
-				x.Centers = append(x.Centers, l.denmaOtherCenter)
+				x.Centers = append(x.Centers, l.denmaDomainCenter)
 			}
 		}
 		for _, s := range senders {
@@ -1240,6 +1336,7 @@ func (a *App) DenmaAddDomain(c echo.Context) error {
 		Domain   string   `json:"domain"`
 		MailFrom string   `json:"mail_from"`
 		Centers  []string `json:"centers"`
+		denmaSenderRule
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -1247,6 +1344,10 @@ func (a *App) DenmaAddDomain(c echo.Context) error {
 	dom := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(req.Domain)), ".")
 	if !reDenmaDomain.MatchString(dom) || len(dom) > 253 {
 		return echo.NewHTTPError(http.StatusBadRequest, "Enter a domain, such as example.org: letters, digits, hyphens and dots.")
+	}
+	rule, err := denmaParseSenders(dom, req.denmaSenderRule)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	mailFrom := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(req.MailFrom)), ".")
 	if mailFrom == "" {
@@ -1271,7 +1372,7 @@ func (a *App) DenmaAddDomain(c echo.Context) error {
 	if s, why := d.ses(); s == nil {
 		return echo.NewHTTPError(http.StatusBadRequest, why)
 	}
-	_, err = d.addDomain(dom, mailFrom, ids)
+	_, err = d.addDomain(dom, mailFrom, ids, rule)
 	if err != nil {
 		err = fmt.Errorf("It was added, but Amazon SES didn't take all of it: %v", err)
 	}
@@ -1401,17 +1502,87 @@ func (a *App) DenmaAddDomainCenter(c echo.Context) error {
 	}
 	var req struct {
 		Slug string `json:"slug"`
+		denmaSenderRule
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	res, err := d.db().Exec(`INSERT INTO denma.sending_domain_centers (domain, center_id)
-		SELECT $1, id FROM denma.centers WHERE slug = $2 ON CONFLICT DO NOTHING`, dom, req.Slug)
+	rule, err := denmaParseSenders(dom, req.denmaSenderRule)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	var id int
+	var on bool
+	if err := d.db().Get(&id, `SELECT id FROM denma.centers WHERE slug = $1`, req.Slug); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return denmaInternal(err)
+	}
+	if err := d.db().Get(&on, `SELECT EXISTS (SELECT 1 FROM denma.sending_domain_centers WHERE domain = $1 AND center_id = $2)`, dom, id); err != nil {
+		return denmaInternal(err)
+	}
+	if id == 0 || on {
+		return echo.NewHTTPError(http.StatusBadRequest, "That center is already on it, or isn't a center.")
+	}
+	if err := d.linkCenter(dom, id, rule); err != nil {
+		return denmaInternal(err)
+	}
+	return d.domainResp(c, dom, nil)
+}
+
+// DenmaSetDomainSenders sets who a center may send as at a domain, unless its sender or sending items would lose theirs.
+func (a *App) DenmaSetDomainSenders(c echo.Context) error {
+	d, err := a.hub(c)
+	if err != nil {
+		return err
+	}
+	dom, err := d.domainParam(c)
+	if err != nil {
+		return err
+	}
+	slug := c.Param("slug")
+	var req denmaSenderRule
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if !req.Any && req.Senders == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, `Give "senders" (the addresses, or none) or "any": true.`)
+	}
+	rule, err := denmaParseSenders(dom, req)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	var on bool
+	if err := d.db().Get(&on, `SELECT EXISTS (SELECT 1 FROM denma.sending_domain_centers dc JOIN denma.centers c ON c.id = dc.center_id
+		WHERE dc.domain = $1 AND c.slug = $2)`, dom, slug); err != nil {
+		return denmaInternal(err)
+	}
+	if !on {
+		return echo.NewHTTPError(http.StatusNotFound, "That center isn't on this domain.")
+	}
+	senders, err := d.centerSenders()
 	if err != nil {
 		return denmaInternal(err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "That center is already on it, or isn't a center.")
+	for _, s := range senders {
+		if s.Slug == slug && s.Domain == dom && !rule.allows(s.From) {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("%s's sender, %s, isn't one of them. Change it on its Config page first, or keep it.", s.Name, denmaSenderAddress(s.From)))
+		}
+	}
+	camps, err := d.domainCampaigns(dom, slug)
+	if err != nil {
+		return denmaInternal(err)
+	}
+	var left []denmaDomainCampaign
+	for _, x := range camps {
+		if !rule.allows(x.From) {
+			left = append(left, x)
+		}
+	}
+	if err := denmaCampaignsUsing(left, "as addresses left out"); err != nil {
+		return err
+	}
+	if _, err := d.db().Exec(`UPDATE denma.sending_domain_centers SET senders = $3 WHERE domain = $1
+		AND center_id = (SELECT id FROM denma.centers WHERE slug = $2)`, dom, slug, rule.value()); err != nil {
+		return denmaInternal(err)
 	}
 	return d.domainResp(c, dom, nil)
 }
@@ -1497,13 +1668,15 @@ func (a *App) DenmaDeleteDomain(c echo.Context) error {
 
 // In the centers: senders on their domains.
 
-// denmaCenterDomain is one of a center's sending domains, for its Config page.
+// denmaCenterDomain is one of a center's sending domains, and who it may send as there, for its Config page.
 type denmaCenterDomain struct {
-	Domain  string `db:"domain" json:"domain"`
-	Status  string `db:"status" json:"status"`
-	CanSend bool   `db:"can_send" json:"can_send"`
-	Label   string `db:"-" json:"label"`
-	Badge   string `db:"-" json:"badge"`
+	Domain  string         `db:"domain" json:"domain"`
+	Status  string         `db:"status" json:"status"`
+	CanSend bool           `db:"can_send" json:"can_send"`
+	Any     bool           `db:"any_sender" json:"any"`
+	Senders pq.StringArray `db:"senders" json:"senders"`
+	Label   string         `db:"-" json:"label"`
+	Badge   string         `db:"-" json:"badge"`
 }
 
 // denmaCenterDomains are the center's sending domains (none for the hub, or without SES).
@@ -1515,7 +1688,8 @@ func (a *App) denmaCenterDomains() ([]denmaCenterDomain, error) {
 	var out []denmaCenterDomain
 	if err := a.db.Select(&out, `SELECT d.domain,
 			CASE WHEN d.checked_at IS NULL THEN '' ELSE COALESCE(d.state->>'status', '') END AS status,
-			COALESCE((d.state->>'can_send')::BOOLEAN, false) AS can_send
+			COALESCE((d.state->>'can_send')::BOOLEAN, false) AS can_send,
+			dc.senders IS NULL AS any_sender, COALESCE(dc.senders, '{}') AS senders
 		FROM denma.sending_domain_centers dc JOIN denma.sending_domains d ON d.domain = dc.domain
 		WHERE dc.center_id = $1 ORDER BY d.domain`, ctr.ID); err != nil {
 		return nil, err
@@ -1527,7 +1701,7 @@ func (a *App) denmaCenterDomains() ([]denmaCenterDomain, error) {
 	return out, nil
 }
 
-// denmaCheckSender refuses a sender (From) whose domain isn't one of the center's sending domains.
+// denmaCheckSender refuses a sender (From) that isn't at one of the center's sending domains, or one it's given there.
 func (a *App) denmaCheckSender(from string) error {
 	dom := denmaSenderDomain(from)
 	if dom == "" || a.denmaCenterOf() == nil || !denmaDomainsOn() {
@@ -1537,12 +1711,27 @@ func (a *App) denmaCheckSender(from string) error {
 	if err != nil {
 		return denmaInternal(err)
 	}
+	return denmaSenderAllowed(from, doms)
+}
+
+// denmaSenderAllowed refuses a sender that isn't at one of doms, or isn't one of the addresses given there.
+func denmaSenderAllowed(from string, doms []denmaCenterDomain) error {
+	dom := denmaSenderDomain(from)
 	names := make([]string, 0, len(doms))
 	for _, d := range doms {
-		if d.Domain == dom {
+		if d.Domain != dom {
+			names = append(names, d.Domain)
+			continue
+		}
+		rule := denmaSenderRule{Any: d.Any, Senders: d.Senders}
+		if rule.allows(from) {
 			return nil
 		}
-		names = append(names, d.Domain)
+		if len(d.Senders) == 0 {
+			return fmt.Errorf("This center has no addresses at %s yet. A superadmin gives them on the hub's Sending domains page.", dom)
+		}
+		return fmt.Errorf("At %s, this center sends only as %s, and %s isn't one of them. A superadmin gives addresses on the hub's Sending domains page.",
+			dom, strings.Join(d.Senders, ", "), denmaSenderAddress(from))
 	}
 	have := "This center has no sending domains yet."
 	if len(names) > 0 {
@@ -1591,12 +1780,12 @@ func (a *App) denmaSystemSender() (from, replyTo string) {
 		return from, ""
 	}
 	dom := denmaSenderDomain(from)
-	var mine bool
-	if err := a.db.Get(&mine, `SELECT EXISTS (SELECT 1 FROM denma.sending_domain_centers WHERE center_id = $1 AND domain = $2)`, ctr.ID, dom); err != nil {
+	doms, err := a.denmaCenterDomains()
+	if err != nil {
 		a.log.Printf("denma: error reading the center's sending domains: %v", err)
 		return from, ""
 	}
-	if mine && !a.denmaDomainRefused(dom) {
+	if dom != "" && denmaSenderAllowed(from, doms) == nil && !a.denmaDomainRefused(dom) {
 		return from, ""
 	}
 	hub, err := mail.ParseAddress(denmaHub.current().cfg.FromEmail)

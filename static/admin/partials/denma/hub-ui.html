@@ -44,3 +44,16 @@
 	</template>
 </footer>
 {{- end }}
+
+{{/* Who a center may send as at a sending domain (cmd/denma_domains.go): Model is an object with any and text. */}}
+{{ define "denma-domain-senders" -}}
+<label>
+	<input type="checkbox" x-model="{{ .Model }}.any" data-testid="{{ .TestID }}-any" /> Any address at the domain
+	<small data-hint>Only for a domain that's the center's own, not one other centers share.</small>
+</label>
+<label data-field x-show="!{{ .Model }}.any">
+	Addresses it may send as
+	<textarea rows="3" x-model="{{ .Model }}.text" placeholder="name@example.org" autocomplete="off" spellcheck="false" data-testid="{{ .TestID }}-text"></textarea>
+	<small data-hint>One per line. Its sender and campaigns can use only these.</small>
+</label>
+{{- end }}

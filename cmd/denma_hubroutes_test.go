@@ -127,6 +127,7 @@ var denmaHubRoutes = []string{
 	"POST /api/users/:id/password-reset", // answers 404: centers only (cmd/denma_password_reset.go)
 	"POST /webhooks/service/:service",
 	"PUT /api/denma/centers/:slug/status",
+	"PUT /api/denma/domains/:domain/centers/:slug",
 	"PUT /api/denma/gmail",
 	"PUT /api/denma/hub/signup-hooks/:id",
 	"PUT /api/denma/mcp/connector",

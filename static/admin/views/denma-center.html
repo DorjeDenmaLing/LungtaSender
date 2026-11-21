@@ -106,7 +106,7 @@
 			<label data-field>
 				Sender
 				<input name="from_email" maxlength="300" required x-model="form.from_email" placeholder='"Center name" &lt;name@example.org&gt;' />
-				<small data-hint>The From of automatic e-mails, and of campaigns that don't set their own.{{ if $d.DomainsOn }} It must be at one of the sending domains below.{{ end }}</small>
+				<small data-hint>The From of automatic e-mails, and of campaigns that don't set their own.{{ if $d.DomainsOn }} It must be one of the addresses below.{{ end }}</small>
 			</label>
 			<label data-field>{{/* cmd/denma_reply_to.go */}}
 				Reply-to
@@ -118,6 +118,7 @@
 				<span class="denma-static-label">Sending domains</span>
 				{{- range $d.Domains }}
 				<span class="denma-static hstack gap-2" data-domain="{{ .Domain }}">{{ .Domain }} {{ Badge (list (Dot) .Label) (printf "enum %s" .Badge) }}</span>
+				<small class="text-light" data-testid="center-domain-senders">{{ if .Any }}Any address{{ else }}{{ range $i, $s := .Senders }}{{ if $i }}, {{ end }}{{ $s }}{{ else }}No addresses yet{{ end }}{{ end }}</small>
 				{{- else }}
 				<span class="denma-static text-light">None yet: a superadmin adds them.</span>
 				{{- end }}

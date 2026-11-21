@@ -495,7 +495,7 @@ func (a *App) DenmaCreateCenter(c echo.Context) error {
 		"login_url":  d.loginURL(),
 	}
 	if denmaDomainsOn() {
-		st, err := d.addDomain(domain, "bounce."+domain, []int{ctr.ID})
+		st, err := d.addDomain(domain, "bounce."+domain, []int{ctr.ID}, denmaSenderRule{Senders: []string{denmaSenderAddress(req.FromEmail)}})
 		out["domain"], out["domain_url"], out["domain_can_send"] = domain, path.Join(a.urlCfg.RootPath, uriAdmin, "domains", domain), st.CanSend
 		if err != nil {
 			out["domain_warning"] = err.Error()
