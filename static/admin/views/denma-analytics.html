@@ -1,12 +1,12 @@
 {{ define "admin-denma-analytics" -}}
 {{ template "admin-header" . }}
-{{/* denma: a center's Audience, Campaigns and Automations pages (cmd/denma_analytics.go). */}}
+{{/* denma: a center's Audience, Campaigns, Automations and Complaints pages (cmd/denma_analytics.go). */}}
 <section class="analytics">
 	<header class="page-header">
 		<h1 class="page-title">{{ .Data.Title }}</h1>
 	</header>
 
-	{{ template "denma-analytics" . }}
+	{{ if eq .Data.Page "complaints" }}{{ template "denma-complaints" . }}{{ else }}{{ template "denma-analytics" . }}{{ end }}
 </section>
 
 {{ template "admin-footer" . -}}

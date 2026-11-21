@@ -1,6 +1,6 @@
 package main
 
-// denma: a center's Analytics, a sidebar group of four pages: Audience, Campaigns, Automations, Explore.
+// denma: a center's Analytics, a sidebar group of five pages: Audience, Campaigns, Automations, Complaints, Explore.
 
 import (
 	"net/http"
@@ -14,6 +14,7 @@ var denmaAnalyticsPages = map[string]string{
 	"audience":    "Audience",
 	"campaigns":   "Campaigns",
 	"automations": "Automations",
+	"complaints":  "Complaints",
 }
 
 // denmaAnalyticsView is an Analytics page (views/denma-analytics.html).
@@ -35,6 +36,8 @@ func (v denmaAnalyticsView) Shows() bool {
 		return camps
 	case "automations":
 		return v.Can(denmaAutoGet)
+	case "complaints":
+		return v.Can("bounces:get")
 	}
 	return false
 }

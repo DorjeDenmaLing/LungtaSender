@@ -1,0 +1,54 @@
+{{/* denma: a center's Analytics -> Complaints (cmd/denma_complaint_days.go, assets/js/views/denma-complaints.js). */}}
+{{ define "denma-complaints" }}
+<div class="vstack gap-6 denma-dash" x-data="denmaComplaints" data-testid="complaints-page">
+	<article class="card denma-stats denma-complaints">
+		<header class="denma-stat-head">
+			<h2>Complaint rates</h2>
+			{{ template "denma-range-controls" }}
+		</header>
+		<div class="denma-stat-grid denma-cols-5" :class="{ 'is-busy': busy }">
+			{{ template "denma-stat-cells" "summary" }}
+		</div>
+		<div class="denma-chart-wrap" :class="{ 'is-busy': busy }">
+			<div x-ref="chart" data-testid="complaints-chart"></div>
+			<div class="denma-legend" aria-hidden="true">
+				<span><i class="ses"></i> Complaint rate (Amazon SES)</span>
+				<span><i class="gmail"></i> Gmail spam rate</span>
+				<span><i class="limit"></i> 0.1%: rates should be under it</span>
+			</div>
+		</div>
+		<p class="denma-stat-note" x-text="note"></p>
+	</article>
+
+	<article class="card denma-stats" x-show="rows.length">
+		<header class="denma-stat-head"><h2>By day</h2></header>
+		<div class="table-wrapper denma-table" :class="{ 'is-busy': busy }">
+			<table data-testid="complaints-days">
+				<thead>
+					<tr>
+						<th>Day (UTC)</th>
+						<th class="num">Sent</th>
+						<th class="num"><abbr title="People who marked the center's mail as spam, as reported to Amazon SES">Complaints</abbr></th>
+						<th class="num"><abbr title="Emails Amazon SES delivered to providers that report complaints to it">Counted by SES</abbr></th>
+						<th class="num"><abbr title="Amazon SES's complaints over the emails it counted">SES rate</abbr></th>
+						<th class="num"><abbr title="Gmail's own figure, from Postmaster Tools">Gmail spam rate</abbr></th>
+					</tr>
+				</thead>
+				<tbody>
+					<template x-for="r in rows" :key="r.day">
+						<tr>
+							<td class="denma-nowrap" x-text="r.dayText"></td>
+							<td class="num" x-text="r.sentText"></td>
+							<td class="num" x-text="r.complaintsText"></td>
+							<td class="num" x-text="r.sesText"></td>
+							<td class="num" :class="r.sesClass" x-text="r.sesRateText"></td>
+							<td class="num" :class="r.gmailClass" x-text="r.gmailText"></td>
+						</tr>
+					</template>
+				</tbody>
+			</table>
+		</div>
+	</article>
+</div>
+<script type="module" src="{{ URI "/admin/static/js/views/denma-complaints.js" }}?v={{ .AssetVersion }}" defer></script>
+{{ end }}

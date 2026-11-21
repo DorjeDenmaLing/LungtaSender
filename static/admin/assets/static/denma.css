@@ -634,6 +634,8 @@ section.analytics {
     --denma-added: light-dark(#36995b, #52c290);
     --denma-unsub: light-dark(#ed7b00, #e6a23c);
     --denma-removed: light-dark(#ff5722, #f2686e);
+    --denma-ses: light-dark(#1f6fd1, #6aa8f0);
+    --denma-gmail: light-dark(#c2185b, #f06292);
 
     /* Wide tables scroll sideways inside the card on narrow screens. */
     .denma-table {
@@ -676,6 +678,15 @@ section.analytics {
         font-weight: 600;
         color: var(--danger);
         cursor: help;
+    }
+
+    .denma-rate-watch {
+        color: var(--warning);
+    }
+
+    .denma-rate-risk {
+        font-weight: 600;
+        color: var(--danger);
     }
 
     .denma-toggle {
@@ -756,6 +767,39 @@ section.analytics {
             fill: var(--denma-removed);
         }
 
+        .line {
+            fill: none;
+            pointer-events: none;
+            stroke-width: 2;
+            stroke-linejoin: round;
+
+            &.ses {
+                stroke: var(--denma-ses);
+            }
+
+            &.gmail {
+                stroke: var(--denma-gmail);
+            }
+        }
+
+        .dot {
+            pointer-events: none;
+
+            &.ses {
+                fill: var(--denma-ses);
+            }
+
+            &.gmail {
+                fill: var(--denma-gmail);
+            }
+        }
+
+        .limit {
+            stroke: var(--danger);
+            stroke-dasharray: 4 4;
+            opacity: 0.6;
+        }
+
         .hit {
             fill: transparent;
         }
@@ -795,6 +839,20 @@ section.analytics {
 
             &.removed {
                 background: var(--denma-removed);
+            }
+
+            &.ses {
+                background: var(--denma-ses);
+            }
+
+            &.gmail {
+                background: var(--denma-gmail);
+            }
+
+            &.limit {
+                height: 0;
+                border-top: 2px dashed var(--danger);
+                border-radius: 0;
             }
         }
     }

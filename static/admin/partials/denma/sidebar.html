@@ -126,6 +126,9 @@
 					{{- if Can $u "automations:get" }}
 					<li><a href="{{ URI "/admin/analytics/automations" }}" {{ IsNav $p "analytics.automations" }} data-cy="analytics-automations">{{ template "denma-icon" "email-outline" }}<span>Automations</span></a></li>
 					{{- end }}
+					{{- if Can $u "bounces:get" }}
+					<li><a href="{{ URI "/admin/analytics/complaints" }}" {{ IsNav $p "analytics.complaints" }} data-cy="analytics-complaints">{{ template "denma-icon" "alert-outline" }}<span>Complaints</span></a></li>
+					{{- end }}
 					<li><a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "analytics.explore" }} data-cy="analytics-explore">{{ template "denma-icon" "chart-bar" }}<span>Explore</span></a></li>
 				</ul>
 			</details>
