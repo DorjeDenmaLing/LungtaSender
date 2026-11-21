@@ -56,7 +56,7 @@
 							{{ template "denma-th" dict "Key" "name" "Label" "Domain" }}
 							{{ template "denma-th" dict "Key" "centers" "Label" "Centers" }}
 							{{ template "denma-th" dict "Key" "status" "Label" "Status" }}
-							{{ template "denma-th" dict "Key" "gmail" "Label" "Gmail spam" "First" "desc" }}
+							{{ template "denma-th" dict "Key" "gmail" "Label" "Gmail complaint rate" "First" "desc" }}
 							{{ template "denma-th" dict "Key" "checked" "Label" "Checked" "First" "desc" }}
 						</tr>
 					</thead>
@@ -74,7 +74,7 @@
 								<td data-label="Status">
 									<span class="badge small enum" :class="r.badge"><span class="dot">&#9679;</span> <span x-text="r.label"></span></span>
 								</td>
-								<td data-label="Gmail spam" :title="r.gmailTitle"><span :class="r.gmailClass" x-text="r.gmailText"></span></td>
+								<td data-label="Gmail complaint rate" :title="r.gmailTitle"><span :class="r.gmailClass" x-text="r.gmailText"></span></td>
 								<td class="date-stack" data-label="Checked" x-text="r.checkedText"></td>
 							</tr>
 						</template>
@@ -89,7 +89,7 @@
 
 		<div class="card vstack gap-3" data-testid="gmail-card">
 			<h3>Gmail Postmaster Tools</h3>
-			<p class="text-light">Gmail's own figures for each domain: the share of Gmail users who marked its mail as spam, by day. Gmail asks senders to stay under 0.1% and never reach 0.3%. Centers see their own domain's on their dashboard. The hub reads them from a Google account that has the domains verified in Postmaster Tools.</p>
+			<p class="text-light">Gmail's own complaint rate for each domain, by day: Gmail users who reported its mail as spam, as a share of its mail in their inboxes. Gmail asks senders to stay under 0.1% and never reach 0.3%. Centers see their own domain's on their dashboard. The hub reads them from a Google account that has the domains verified in Postmaster Tools.</p>
 			<template x-if="gmail.notice"><p class="denma-note" role="status" data-testid="gmail-notice" x-text="gmail.notice"></p></template>
 			<template x-if="gmail.connected">
 				<div class="hstack gap-3 flex-wrap justify-between">

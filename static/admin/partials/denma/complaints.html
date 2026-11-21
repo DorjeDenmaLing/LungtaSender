@@ -13,7 +13,7 @@
 			<div x-ref="chart" data-testid="complaints-chart"></div>
 			<div class="denma-legend" aria-hidden="true">
 				<span><i class="ses"></i> Complaint rate (Amazon SES)</span>
-				<span><i class="gmail"></i> Gmail spam rate</span>
+				<span><i class="gmail"></i> Complaint rate (Gmail)</span>
 				<span><i class="limit"></i> 0.1%: rates should be under it</span>
 			</div>
 		</div>
@@ -31,7 +31,7 @@
 						<th class="num"><abbr title="People who marked the center's mail as spam, as reported to Amazon SES">Complaints</abbr></th>
 						<th class="num"><abbr title="Emails Amazon SES delivered to providers that report complaints to it">Counted by SES</abbr></th>
 						<th class="num"><abbr title="Amazon SES's complaints over the emails it counted">SES rate</abbr></th>
-						<th class="num"><abbr title="Gmail's own figure, from Postmaster Tools">Gmail spam rate</abbr></th>
+						<th class="num"><abbr title="Gmail users who reported the center's mail as spam, as a share of its mail in their inboxes (Postmaster Tools)">Gmail rate</abbr></th>
 					</tr>
 				</thead>
 				<tbody>

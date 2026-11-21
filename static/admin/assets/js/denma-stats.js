@@ -221,12 +221,12 @@ export const BOUNCE_METRICS = [
   ['soft', 'Soft bounces', 'count', 'Temporary failures (mailbox full, server busy). listmonk records these but keeps sending.'],
   ['complaint', 'Complaints', 'count', 'People who marked an email as spam. listmonk blocklists them.'],
   ['complaintRate', 'Complaint rate', 'pct2', "Complaints as a share of emails to Outlook, Hotmail, Yahoo, AOL and Comcast, which report them (Gmail doesn't), as Amazon SES counts them. It should be under 0.1%.", [0.0005, 0.001]],
-  ['gmailSpam', 'Gmail spam rate', 'pct2', "Gmail's own spam rate for the center's domain, the average of its days in this period. Postmaster Tools can be 2 to 4 days behind. It should be under 0.1%.", [0.001, 0.003]],
+  ['gmailSpam', 'Gmail complaint rate', 'pct2', "Gmail users who reported the center's mail as spam, as a share of its mail in their inboxes, averaged over this period's days. Postmaster Tools can be 2 to 4 days behind. It should be under 0.1%.", [0.001, 0.003]],
 ];
 
 const COMPLAINT_HELP_SES = "Amazon SES's own complaint rate for the center's domain. It should be under 0.1%.";
 
-// providerPair puts SES's own complaint rate and Gmail's spam rate (cmd/denma_provider_stats.go) into a period's
+// providerPair puts SES's own complaint rate and Gmail's complaint rate (cmd/denma_provider_stats.go) into a period's
 // figures and the previous one's; a change is shown only between rates counted the same way.
 export function providerPair(cur, prev, pc, pp) {
   [[cur, pc], [prev, pp]].forEach(([f, p]) => {

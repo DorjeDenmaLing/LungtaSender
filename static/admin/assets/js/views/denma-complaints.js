@@ -13,8 +13,8 @@ const CELLS = [
   ['sent', 'Emails sent', 'count', 'Emails the center sent in this period, by UTC day.'],
   ['complaints', 'Complaints', 'count', "People who marked the center's mail as spam, as reported to Amazon SES. Gmail doesn't report them."],
   ['sesRate', 'Complaint rate (Amazon SES)', 'pct2', "Amazon SES's own complaint rate for the center's domain over this period. It should be under 0.1%.", SES_BANDS],
-  ['gmailAvg', 'Gmail spam rate', 'pct2', "Gmail's own spam rate for the center's domain, the average of its days in this period. Postmaster Tools can be 2 to 4 days behind. It should be under 0.1%.", GMAIL_BANDS],
-  ['gmailWorst', "Gmail's worst day", 'pct2', "Gmail's highest daily spam rate in this period. Postmaster Tools can be 2 to 4 days behind.", GMAIL_BANDS],
+  ['gmailAvg', 'Complaint rate (Gmail)', 'pct2', "Gmail users who reported the center's mail as spam, as a share of its mail in their inboxes, averaged over this period's days. Postmaster Tools can be 2 to 4 days behind. It should be under 0.1%.", GMAIL_BANDS],
+  ['gmailWorst', "Gmail's worst day", 'pct2', "Gmail's highest daily complaint rate in this period. Postmaster Tools can be 2 to 4 days behind.", GMAIL_BANDS],
 ];
 
 const dayDate = (day) => new Date(`${day}T12:00:00`);
@@ -44,7 +44,7 @@ function chart(days, width) {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('class', 'denma-chart');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Amazon SES complaint rate and Gmail spam rate per day, against 0.1%');
+  svg.setAttribute('aria-label', 'Complaint rates per day, Amazon SES and Gmail, against 0.1%');
   const node = (parent, tag, attrs, text) => {
     const e = document.createElementNS(NS, tag);
     Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
