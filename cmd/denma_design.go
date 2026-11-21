@@ -254,20 +254,23 @@ func denmaDesignLayout(logo, name, marker string) (body, source string) {
 	body = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>` +
 		`<div style="background-color:#F9F9F9;color:#111111;font-family:&quot;Helvetica Neue&quot;, &quot;Arial Nova&quot;, &quot;Nimbus Sans&quot;, Arial, sans-serif;font-size:16px;font-weight:400;letter-spacing:0.15008px;line-height:1.5;margin:0;padding:32px 0;min-height:100%;width:100%">` +
 		`<table align="center" width="100%" style="margin:0 auto;max-width:600px;background-color:#FFFFFF;border:1px solid #EEEEEE" role="presentation" cellSpacing="0" cellPadding="0" border="0"><tbody><tr style="width:100%"><td>` +
-		`<div style="padding:40px 40px 15px 40px;text-align:left"><img alt="` + html.EscapeString(name) + `" src="` + html.EscapeString(logo) + `" height="90" style="height:90px;outline:none;border:none;text-decoration:none;vertical-align:middle;display:inline-block;max-width:100%"/></div>` +
+		`<div style="padding:40px 40px 15px 40px;text-align:left"><img alt="` + html.EscapeString(name) + `" src="` + html.EscapeString(logo) + `" height="90" style="height:auto;max-height:90px;outline:none;border:none;text-decoration:none;vertical-align:middle;display:inline-block;max-width:100%"/></div>` +
 		`<div style="padding:0px 40px 0px 40px"><hr style="width:100%;border:none;border-top:1px solid #EEEEEE;margin:0"/></div>` +
 		`<div style="font-size:16px;padding:30px 40px 40px 40px">` + marker + `</div>` +
 		denmaDesignFooterHTML + denmaDesignEnd
 	return body, string(b)
 }
 
-// denmaDesignLogo is the logo a center's default design shows: its own, or listmonk's.
+// denmaDesignLogo is the logo a center's default design shows: its own, or listmonk's, 90px tall.
 func denmaDesignLogo(logoURL, rootURL string) string {
 	if logoURL != "" {
 		return logoURL
 	}
-	return strings.TrimSuffix(rootURL, "/") + "/public/static/logo.svg"
+	return strings.TrimSuffix(rootURL, "/") + "/public/static/" + denmaDesignStockLogo
 }
+
+// denmaDesignStockLogo is listmonk's logo at the design's logo height.
+const denmaDesignStockLogo = "denma-logo.svg"
 
 // denmaAddDefaultDesign makes a center's design (in tx, its schema) if it has none.
 func denmaAddDefaultDesign(tx *sqlx.Tx) error {
@@ -292,6 +295,48 @@ func denmaAddDefaultDesign(tx *sqlx.Tx) error {
 	_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.default_design', $1::TEXT::JSONB)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, strconv.Itoa(id))
 	return err
+}
+
+// reDenmaFixedHeightImg is an Image block's <img> with a fixed height and no width.
+var reDenmaFixedHeightImg = regexp.MustCompile(`(<img alt="[^"]*" src="[^"]*" height="(\d+)" style=")height:\d+px;(outline:none;)`)
+
+// denmaImgHeightsHTML makes each such image's height a maximum, as the builder writes it.
+func denmaImgHeightsHTML(body string) string {
+	return reDenmaFixedHeightImg.ReplaceAllString(body, `${1}height:auto;max-height:${2}px;${3}`)
+}
+
+// denmaDesignImgHeights makes the center's design's images keep their shape when narrowed, as the builder writes
+// them, and gives a center without a logo listmonk's at the design's logo height.
+func denmaDesignImgHeights(tx *sqlx.Tx) (bool, error) {
+	var t struct {
+		ID     int    `db:"id"`
+		Body   string `db:"body"`
+		Source string `db:"body_source"`
+		Logo   string `db:"logo"`
+	}
+	err := tx.Get(&t, `SELECT t.id, t.body, COALESCE(t.body_source, '') AS body_source,
+		COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'app.logo_url'), '') AS logo
+		FROM settings s JOIN templates t ON t.id = (s.value #>> '{}')::INT WHERE s.key = 'denma.default_design'`)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	body, src := denmaImgHeightsHTML(t.Body), t.Source
+	if t.Logo == "" {
+		body, src = denmaStockLogoHTML(body), denmaStockLogoHTML(src)
+	}
+	if body == t.Body && src == t.Source {
+		return false, nil
+	}
+	_, err = tx.Exec(`UPDATE templates SET body = $2, body_source = NULLIF($3, ''), updated_at = NOW() WHERE id = $1`, t.ID, body, src)
+	return err == nil, err
+}
+
+// denmaStockLogoHTML puts listmonk's logo at the design's logo height in place of its own size, in a design's HTML or source.
+func denmaStockLogoHTML(s string) string {
+	return strings.ReplaceAll(s, `/public/static/logo.svg"`, `/public/static/`+denmaDesignStockLogo+`"`)
 }
 
 // denmaDefaultDesignID is the center's default design's template id.

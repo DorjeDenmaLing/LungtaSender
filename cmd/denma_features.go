@@ -19,7 +19,7 @@ import (
 )
 
 // denmaFeaturesVersion is the version of denmaFeaturesSQL.
-const denmaFeaturesVersion = 70
+const denmaFeaturesVersion = 71
 
 // denmaFeatureDefaults are the settings' values in a center that doesn't have them yet.
 var denmaFeatureDefaults = map[string]any{
@@ -254,6 +254,14 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 	if ver < 69 {
 		if _, err := tx.Exec(denmaFeedbackBackfillSQL()); err != nil {
 			return fmt.Errorf("flagging sent e-mails' providers: %w", err)
+		}
+	}
+	// The design's images keep their shape when narrowed (cmd/denma_design.go).
+	if ver < 71 {
+		if ok, err := denmaDesignImgHeights(tx); err != nil {
+			return fmt.Errorf("fixing the design's image heights: %w", err)
+		} else if ok {
+			lo.Printf("denma: center %s: its design's logo keeps its shape when narrowed", c.Slug)
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO settings (key, value) VALUES ('denma.features_version', $1::TEXT::JSONB)

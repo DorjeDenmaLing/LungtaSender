@@ -1,6 +1,7 @@
 // Adds to the visual builder's bundle in dist/: the "System sans" font (each
 // device's own) for the e-mail and every block, a Border radius and Border
-// color for Image blocks, and the e-mail's own font shown in its Styles. Fails
+// color for Image blocks, images that keep their shape when narrowed, and the
+// e-mail's own font shown in its Styles. Fails
 // the build if the bundle doesn't have the places they're changed in.
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -27,6 +28,8 @@ const EDITS = [
   [IMG_STYLE, IMG_STYLE.replace('border:"none"', 'border:null!=e&&e.borderColor?`1px solid ${e.borderColor}`:"none"')
     + ',borderRadius:null==e?void 0:e.borderRadius', 1],
   ['names:["backgroundColor","textAlign","padding"]', 'names:["backgroundColor","borderColor","borderRadius","textAlign","padding"]', 1],
+  // An Image with a height and no width keeps its shape when narrowed: its height is a maximum.
+  ['style:{width:m,height:h,', 'style:{width:m,height:null==m&&null!=h?"auto":h,maxHeight:null==m&&null!=h?h:void 0,', 1],
 ];
 
 export async function patch(dist) {
@@ -38,5 +41,5 @@ export async function patch(dist) {
     js = js.replaceAll(from, to);
   }
   await writeFile(file, js);
-  console.log('email-builder: added the System sans font and image borders');
+  console.log('email-builder: added the System sans font, image borders and image heights');
 }
