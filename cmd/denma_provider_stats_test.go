@@ -95,13 +95,33 @@ func TestDenmaIDTokenEmail(t *testing.T) {
 	}
 }
 
-// A domain with figures is fetched again a few days back; a new one from the backfill.
+// A fetch starts a few days before the domain's last, within the backfill; a new domain's at the backfill.
 func TestDenmaProviderFrom(t *testing.T) {
 	today := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
-	if got := denmaProviderFrom(map[string]bool{"a.org": true}, "a.org", today); !got.Equal(today.AddDate(0, 0, -denmaProviderRecent)) {
-		t.Fatalf("known = %v", got)
+	through := map[string]time.Time{"a.org": today, "b.org": today.AddDate(0, 0, -20), "c.org": today.AddDate(0, 0, -200)}
+	for dom, want := range map[string]time.Time{
+		"a.org": today.AddDate(0, 0, -denmaProviderRecent),
+		"b.org": today.AddDate(0, 0, -20-denmaProviderRecent),
+		"c.org": today.AddDate(0, 0, -denmaProviderBackfill),
+		"d.org": today.AddDate(0, 0, -denmaProviderBackfill),
+	} {
+		if got := denmaProviderFrom(through, dom, today); !got.Equal(want) {
+			t.Fatalf("%s from %v, want %v", dom, got, want)
+		}
 	}
-	if got := denmaProviderFrom(map[string]bool{"a.org": true}, "b.org", today); !got.Equal(today.AddDate(0, 0, -denmaProviderBackfill)) {
-		t.Fatalf("new = %v", got)
+}
+
+// A fetch is split into spans SES takes, the last one shorter.
+func TestDenmaDayWindows(t *testing.T) {
+	day := func(m, d int) time.Time { return time.Date(2026, time.Month(m), d, 0, 0, 0, 0, time.UTC) }
+	got := denmaDayWindows(day(8, 23), day(11, 22), denmaVDMMaxDays)
+	if len(got) != 2 || !got[0][0].Equal(day(8, 23)) || !got[0][1].Equal(day(10, 22)) || !got[1][0].Equal(day(10, 22)) || !got[1][1].Equal(day(11, 22)) {
+		t.Fatalf("90 days = %v", got)
+	}
+	if got := denmaDayWindows(day(9, 1), day(10, 31), 60); len(got) != 1 {
+		t.Fatalf("60 days = %v", got)
+	}
+	if got := denmaDayWindows(day(9, 1), day(9, 1), 60); len(got) != 0 {
+		t.Fatalf("no days = %v", got)
 	}
 }

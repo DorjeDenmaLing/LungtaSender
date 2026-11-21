@@ -52,16 +52,28 @@ CREATE TABLE IF NOT EXISTS denma.gmail_postmaster (
     fetched_at    TIMESTAMP WITH TIME ZONE NULL,
     errors        JSONB NOT NULL DEFAULT '{}' -- the last fetch's, by domain ('' for all)
 );
-INSERT INTO denma.gmail_postmaster (id) VALUES (1) ON CONFLICT DO NOTHING;`
+INSERT INTO denma.gmail_postmaster (id) VALUES (1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS denma.provider_fetches (
+    source     TEXT PRIMARY KEY,              -- 'ses'
+    fetched_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    error      TEXT NOT NULL DEFAULT ''       -- the last fetch's, '' when it worked
+);
+CREATE TABLE IF NOT EXISTS denma.provider_fetched (
+    domain  TEXT NOT NULL,
+    source  TEXT NOT NULL,                    -- 'ses', 'gmail'
+    through DATE NOT NULL,                    -- the last day its figures were fetched up to
+    PRIMARY KEY (domain, source)
+);`
 
 const (
-	denmaProviderBackfill = 90               // days fetched for a domain with none yet
-	denmaProviderRecent   = 6                // days fetched again each time, as late figures arrive
+	denmaProviderBackfill = 90               // days fetched for a domain never fetched, and at most
+	denmaProviderRecent   = 6                // days before the last fetch fetched again, as late figures arrive
 	denmaGmailEvery       = 6 * time.Hour    // Gmail's figures come once a day
 	denmaGmailStateTTL    = 10 * time.Minute // a sign-in's time to come back
 	denmaGmailScope       = "https://www.googleapis.com/auth/postmaster.traffic.readonly"
 	denmaProviderTimeout  = 10 * time.Minute // one fetch of every domain
 	denmaVDMBatch         = 10               // queries in one BatchGetMetricData call
+	denmaVDMMaxDays       = 60               // days in one BatchGetMetricData query
 )
 
 // Google's endpoints (a test's server in tests).
@@ -140,6 +152,9 @@ func (s *denmaRealSES) DomainDays(ctx context.Context, domains []string, from, t
 
 // DomainDays is the dev SES's (denma.dev_ses_vdm), as a check sets it.
 func (s *denmaFakeSES) DomainDays(ctx context.Context, domains []string, from, to time.Time) ([]denmaSESDomainDay, error) {
+	if to.Sub(from) > denmaVDMMaxDays*24*time.Hour {
+		return nil, errors.New("BadRequestException: Invalid interval, can request at most 60 days.")
+	}
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS denma.dev_ses_vdm (domain TEXT NOT NULL, day DATE NOT NULL,
 		complaints INTEGER NOT NULL, deliveries INTEGER NOT NULL, PRIMARY KEY (domain, day))`); err != nil {
 		return nil, err
@@ -189,8 +204,14 @@ func (d *denmaCenters) fetchProviderStats(gmailNow bool) {
 	if len(doms) == 0 {
 		return
 	}
+	sesErr := ""
 	if err := d.fetchSESDays(ctx, s, doms); err != nil {
 		lo.Printf("denma: error fetching Amazon SES's figures by domain: %v", err)
+		sesErr = denmaClip(err.Error(), 300)
+	}
+	if _, err := d.db().ExecContext(ctx, `INSERT INTO denma.provider_fetches (source, fetched_at, error) VALUES ('ses', NOW(), $1)
+		ON CONFLICT (source) DO UPDATE SET fetched_at = NOW(), error = $1`, sesErr); err != nil {
+		lo.Printf("denma: error noting Amazon SES's fetch: %v", err)
 	}
 	g, err := d.gmailConfig()
 	if err != nil {
@@ -203,29 +224,64 @@ func (d *denmaCenters) fetchProviderStats(gmailNow bool) {
 	}
 }
 
-// denmaProviderFrom is where a domain's fetch starts: a few days back, or the backfill for a domain with none.
-func denmaProviderFrom(have map[string]bool, dom string, today time.Time) time.Time {
-	if have[dom] {
-		return today.AddDate(0, 0, -denmaProviderRecent)
+// denmaDayWindows splits from to to (midnights) into spans of at most max days.
+func denmaDayWindows(from, to time.Time, max int) [][2]time.Time {
+	var out [][2]time.Time
+	for s := from; s.Before(to); s = s.AddDate(0, 0, max) {
+		e := s.AddDate(0, 0, max)
+		if e.After(to) {
+			e = to
+		}
+		out = append(out, [2]time.Time{s, e})
 	}
-	return today.AddDate(0, 0, -denmaProviderBackfill)
+	return out
 }
 
-// denmaProviderHave is the domains with figures of the column already.
-func (d *denmaCenters) providerHave(ctx context.Context, col string) (map[string]bool, error) {
-	var doms []string
-	if err := d.db().SelectContext(ctx, &doms, `SELECT DISTINCT domain FROM denma.provider_days WHERE `+col+` IS NOT NULL`); err != nil {
+// denmaProviderFetch is the last fetch of a source's figures.
+type denmaProviderFetch struct {
+	FetchedAt time.Time `db:"fetched_at" json:"fetched_at"`
+	Error     string    `db:"error" json:"error"`
+}
+
+// denmaProviderFrom is where a domain's fetch starts: a few days before its last one, within the backfill.
+func denmaProviderFrom(through map[string]time.Time, dom string, today time.Time) time.Time {
+	first := today.AddDate(0, 0, -denmaProviderBackfill)
+	t, ok := through[dom]
+	if !ok {
+		return first
+	}
+	if from := t.AddDate(0, 0, -denmaProviderRecent); from.After(first) {
+		return from
+	}
+	return first
+}
+
+// providerThrough is the day each domain's figures from source were last fetched up to.
+func (d *denmaCenters) providerThrough(ctx context.Context, source string) (map[string]time.Time, error) {
+	var rows []struct {
+		Domain  string    `db:"domain"`
+		Through time.Time `db:"through"`
+	}
+	if err := d.db().SelectContext(ctx, &rows, `SELECT domain, through FROM denma.provider_fetched WHERE source = $1`, source); err != nil {
 		return nil, err
 	}
-	have := map[string]bool{}
-	for _, x := range doms {
-		have[x] = true
+	out := map[string]time.Time{}
+	for _, r := range rows {
+		out[r.Domain] = r.Through.UTC()
 	}
-	return have, nil
+	return out, nil
+}
+
+// providerFetched notes the domains' figures from source as fetched up to day.
+func (d *denmaCenters) providerFetched(ctx context.Context, source string, doms []string, day time.Time) error {
+	_, err := d.db().ExecContext(ctx, `INSERT INTO denma.provider_fetched (domain, source, through)
+		SELECT UNNEST($1::TEXT[]), $2, $3 ON CONFLICT (domain, source) DO UPDATE SET through = EXCLUDED.through`,
+		pq.Array(doms), source, day.Format(time.DateOnly))
+	return err
 }
 
 func (d *denmaCenters) fetchSESDays(ctx context.Context, s denmaSES, doms []string) error {
-	have, err := d.providerHave(ctx, "ses_deliveries")
+	have, err := d.providerThrough(ctx, "ses")
 	if err != nil {
 		return err
 	}
@@ -236,9 +292,13 @@ func (d *denmaCenters) fetchSESDays(ctx context.Context, s denmaSES, doms []stri
 		groups[f] = append(groups[f], dom)
 	}
 	for from, group := range groups {
-		days, err := s.DomainDays(ctx, group, from, today.AddDate(0, 0, 1))
-		if err != nil {
-			return err
+		var days []denmaSESDomainDay
+		for _, w := range denmaDayWindows(from, today.AddDate(0, 0, 1), denmaVDMMaxDays) {
+			part, err := s.DomainDays(ctx, group, w[0], w[1])
+			if err != nil {
+				return err
+			}
+			days = append(days, part...)
 		}
 		var (
 			ds, ts      []string
@@ -253,6 +313,9 @@ func (d *denmaCenters) fetchSESDays(ctx context.Context, s denmaSES, doms []stri
 			ON CONFLICT (domain, day) DO UPDATE SET ses_complaints = EXCLUDED.ses_complaints,
 				ses_deliveries = EXCLUDED.ses_deliveries, updated_at = NOW()`,
 			pq.Array(ds), pq.Array(ts), pq.Array(comps), pq.Array(dels)); err != nil {
+			return err
+		}
+		if err := d.providerFetched(ctx, "ses", group, today); err != nil {
 			return err
 		}
 	}
@@ -305,7 +368,7 @@ type denmaGmailDay struct {
 
 // fetchGmailDays fetches each domain's spam rate and keeps the errors, by domain.
 func (d *denmaCenters) fetchGmailDays(ctx context.Context, g denmaGmailConfig, doms []string, fake bool) {
-	have, err := d.providerHave(ctx, "gmail_spam_rate")
+	have, err := d.providerThrough(ctx, "gmail")
 	if err != nil {
 		lo.Printf("denma: error reading Gmail's figures: %v", err)
 		return
@@ -340,6 +403,11 @@ func (d *denmaCenters) fetchGmailDays(ctx context.Context, g denmaGmailConfig, d
 				errs[dom] = "Its figures couldn't be kept."
 				lo.Printf("denma: error keeping Gmail's figures: %v", err)
 				break
+			}
+		}
+		if errs[dom] == "" {
+			if err := d.providerFetched(ctx, "gmail", []string{dom}, today); err != nil {
+				lo.Printf("denma: error noting Gmail's fetch: %v", err)
 			}
 		}
 	}

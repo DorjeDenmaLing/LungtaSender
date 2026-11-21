@@ -1141,7 +1141,8 @@ type denmaDomainsView struct {
 	Region  string
 	Off     string // why there's no SES
 	Ref     denmaDomainRef
-	Gmail   denmaGmailView // cmd/denma_provider_stats.go
+	Gmail   denmaGmailView      // cmd/denma_provider_stats.go
+	SESDays *denmaProviderFetch // the last fetch of SES's figures by domain
 }
 
 // ViewDenmaDomains renders the Sending domains page (views/denma-domains.html).
@@ -1184,6 +1185,12 @@ func (d *denmaCenters) domainsView(c echo.Context, only, title string) (denmaDom
 		return v, denmaInternal(err)
 	}
 	if v.Gmail, err = d.gmailView(c.QueryParam("gmail")); err != nil {
+		return v, denmaInternal(err)
+	}
+	var f denmaProviderFetch
+	if err := d.db().Get(&f, `SELECT fetched_at, error FROM denma.provider_fetches WHERE source = 'ses'`); err == nil {
+		v.SESDays = &f
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return v, denmaInternal(err)
 	}
 	s, why := d.ses()

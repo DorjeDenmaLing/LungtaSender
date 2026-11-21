@@ -28,6 +28,11 @@
 			{{- else }}
 			New domains send their bounces and complaints to the hub as {{ $d.Ref.Domain }} (the hub's sender's domain) does{{ if $d.Ref.ConfigSet }}, with its configuration set, {{ $d.Ref.ConfigSet }}{{ end }}.
 			{{- end }}
+			{{- with $d.SESDays }}
+			{{- if .Error }}
+			<strong data-testid="ses-days-error">Amazon SES's complaint counts by domain couldn't be fetched:</strong> {{ .Error }}
+			{{- end }}
+			{{- end }}
 		</p>
 		{{- end }}
 
