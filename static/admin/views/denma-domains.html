@@ -5,6 +5,7 @@
 <script nonce="{{ .CSPNonce }}">
 	window._denmaDomains = {{ ToJSON $d.Domains }};
 	window._denmaCenters = {{ ToJSON $d.Centers }};
+	window._denmaGmail = {{ ToJSON $d.Gmail }};
 </script>
 <section class="denma-domains" x-data="denmaDomains" x-cloak>
 	<header class="page-header hstack justify-between">
@@ -50,6 +51,7 @@
 							{{ template "denma-th" dict "Key" "name" "Label" "Domain" }}
 							{{ template "denma-th" dict "Key" "centers" "Label" "Centers" }}
 							{{ template "denma-th" dict "Key" "status" "Label" "Status" }}
+							{{ template "denma-th" dict "Key" "gmail" "Label" "Gmail spam" "First" "desc" }}
 							{{ template "denma-th" dict "Key" "checked" "Label" "Checked" "First" "desc" }}
 						</tr>
 					</thead>
@@ -67,16 +69,68 @@
 								<td data-label="Status">
 									<span class="badge small enum" :class="r.badge"><span class="dot">&#9679;</span> <span x-text="r.label"></span></span>
 								</td>
+								<td data-label="Gmail spam" :title="r.gmailTitle"><span :class="r.gmailClass" x-text="r.gmailText"></span></td>
 								<td class="date-stack" data-label="Checked" x-text="r.checkedText"></td>
 							</tr>
 						</template>
 						<template x-if="!rows.length">
-							<tr><td colspan="4" class="text-light">No sending domains yet.{{ if not $d.Off }} Add the first with Add domain.{{ end }}</td></tr>
+							<tr><td colspan="5" class="text-light">No sending domains yet.{{ if not $d.Off }} Add the first with Add domain.{{ end }}</td></tr>
 						</template>
 					</tbody>
 				</table>
 			</div>
 			{{ template "denma-pager" }}
+		</div>
+
+		<div class="card vstack gap-3" data-testid="gmail-card">
+			<h3>Gmail Postmaster Tools</h3>
+			<p class="text-light">Gmail's own figures for each domain: the share of Gmail users who marked its mail as spam, by day. Gmail asks senders to stay under 0.1% and never reach 0.3%. Centers see their own domain's on their dashboard. The hub reads them from a Google account that has the domains verified in Postmaster Tools.</p>
+			<template x-if="gmail.notice"><p class="denma-note" role="status" data-testid="gmail-notice" x-text="gmail.notice"></p></template>
+			<template x-if="gmail.connected">
+				<div class="hstack gap-3 flex-wrap justify-between">
+					<p data-testid="gmail-connected">Connected as <strong x-text="gmail.account || 'a Google account'"></strong>. <span class="text-light" x-text="gmailFetched()"></span></p>
+					<div class="hstack gap-2">
+						<button type="button" class="outline" data-testid="btn-gmail-fetch" @click="onGmailFetch" :disabled="isLoading('gmail')" :aria-busy="isLoading('gmail')">Fetch now</button>
+						<button type="button" class="outline" data-testid="btn-gmail-disconnect" @click="onGmailDisconnect" :disabled="isLoading('gmail')">Disconnect</button>
+					</div>
+				</div>
+			</template>
+			<template x-if="gmailErrors().length">
+				<ul class="denma-note" role="note" data-testid="gmail-errors">
+					<template x-for="e in gmailErrors()" :key="e.domain"><li><strong x-show="e.domain" x-text="`${e.domain}: `"></strong><span x-text="e.message"></span></li></template>
+				</ul>
+			</template>
+			<details :open="!gmail.connected">
+				<summary>Google client</summary>
+				<form class="vstack gap-3 mt-3" @submit.prevent="onGmailSave">
+					<label data-field>
+						Client ID
+						<input x-model="gmailForm.client_id" maxlength="300" required autocomplete="off" spellcheck="false" data-testid="gmail-client-id" />
+						<small data-hint>From the hub's OAuth client in Google Cloud (a web application).</small>
+					</label>
+					<label data-field>
+						Client secret
+						<input type="password" x-model="gmailForm.client_secret" maxlength="300" autocomplete="new-password" :placeholder="gmail.has_secret ? 'Saved; enter a new one to change it' : ''" data-testid="gmail-client-secret" />
+						<small data-hint>Kept by the hub; a new client ID needs its own secret and a new connection.</small>
+					</label>
+					<div class="hstack gap-2 flex-wrap">
+						<button type="submit" class="outline" data-testid="btn-gmail-save" :disabled="isLoading('gmail')">Save</button>
+						<template x-if="gmail.client_id && gmail.has_secret">
+							<a role="button" data-variant="primary" :href="gmailConnectURL" data-testid="btn-gmail-connect" x-text="gmail.connected ? 'Connect again' : 'Connect with Google'"></a>
+						</template>
+					</div>
+				</form>
+				<details class="mt-3">
+					<summary>Setting it up</summary>
+					<ol class="text-light mt-2">
+						<li>In Google Cloud, enable the Gmail Postmaster Tools API.</li>
+						<li>Set up the OAuth consent screen as Internal (or publish it: in Testing, the access ends after 7 days).</li>
+						<li>Make an OAuth client of the type Web application, with this authorized redirect URI: <code x-text="gmail.redirect"></code></li>
+						<li>Save its ID and secret here, then connect with a Google account that has each domain verified in Postmaster Tools.</li>
+					</ol>
+					<p class="text-light mt-2">The hub asks only to read Postmaster Tools' figures, and fetches them every 6 hours. Gmail gives them only for days with enough mail to Gmail users.</p>
+				</details>
+			</details>
 		</div>
 	</div>
 

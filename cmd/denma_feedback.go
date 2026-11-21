@@ -83,6 +83,8 @@ func (a *App) DenmaStatFeedback(c echo.Context) error {
 		Cur   int        `json:"cur"`
 		Prev  int        `json:"prev"`
 		Since *time.Time `json:"since"` // complaints before it have no e-mails to count against
+		// SES's and Gmail's own figures for the center's domains (cmd/denma_provider_stats.go).
+		Providers map[string]*denmaProviderFigures `json:"providers"`
 	}
 	q := `SELECT ` + strings.ReplaceAll(denmaFeedbackSendsSQL, "S.", "")
 	for i, n := range []*int{&out.Cur, &out.Prev} {
@@ -92,6 +94,16 @@ func (a *App) DenmaStatFeedback(c echo.Context) error {
 	}
 	if err := a.db.Get(&out.Since, `SELECT `+strings.ReplaceAll(denmaFeedbackSinceSQL, "S.", "")); err != nil {
 		return denmaInternal(err)
+	}
+	if ctr := a.denmaCenterOf(); ctr != nil {
+		out.Providers = map[string]*denmaProviderFigures{}
+		for i, k := range []string{"cur", "prev"} {
+			f, err := denmaProvidersFor(a.db, ctr.ID, t[2*i], t[2*i+1])
+			if err != nil {
+				return denmaInternal(err)
+			}
+			out.Providers[k] = f
+		}
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }

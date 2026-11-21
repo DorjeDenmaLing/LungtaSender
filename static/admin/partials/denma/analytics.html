@@ -24,7 +24,7 @@
 						<th class="num"><abbr title="The people who clicked, as a share of those who opened">Click-to-open</abbr></th>
 						<th class="num"><abbr title="People who unsubscribed from this campaign's e-mail">Unsubscribes</abbr></th>
 						<th class="num"><abbr title="Hard and soft bounces">Bounces</abbr></th>
-						<th class="num"><abbr title="People who marked it as spam. Amazon SES reviews an account at 0.1%.">Complaints</abbr></th>
+						<th class="num"><abbr title="People who marked it as spam. It should be under 0.1%.">Complaints</abbr></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -80,7 +80,7 @@
 						<th class="num"><abbr title="The people who clicked, as a share of those who opened">Click-to-open</abbr></th>
 						<th class="num"><abbr title="People who unsubscribed from this automation's e-mail">Unsubscribes</abbr></th>
 						<th class="num"><abbr title="Hard and soft bounces">Bounces</abbr></th>
-						<th class="num"><abbr title="People who marked it as spam. Amazon SES reviews an account at 0.1%.">Complaints</abbr></th>
+						<th class="num"><abbr title="People who marked it as spam. It should be under 0.1%.">Complaints</abbr></th>
 					</tr>
 				</thead>
 				<template x-for="g in autos.rows" :key="g.id">
@@ -269,7 +269,7 @@
 		{{- else if eq .Key "bounces" }}
 			<p>E-mails that couldn't be delivered: hard bounces (the address doesn't exist; it's blocklisted) and soft bounces (a passing failure, such as a full mailbox). Each one recorded counts. Complaints are in their own card.</p>
 		{{- else if eq .Key "complaints" }}
-			<p>People who marked the e-mail as spam. A complaint is final: they can't be subscribed in this center again. Mail providers may stop delivering a sender's mail when complaints pass 0.1% of what it sends.</p>
+			<p>People who marked the e-mail as spam. A complaint is final: they can't be subscribed in this center again. Complaints should be under 0.1% of what's sent.</p>
 		{{- else if eq .Key "links" }}
 			{{- if .Individual }}
 			<p>Each link in the e-mail, with how many people clicked it. Someone who clicked it more than once, or in more than one of these campaigns, counts once.</p>

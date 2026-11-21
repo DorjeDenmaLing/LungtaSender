@@ -67,6 +67,7 @@ function component() {
     render() {
       this.rows = this.centers.map((c) => {
         const f = c.cur ? hubFigures(c.cur) : null;
+        if (f) s.providerPair(f, {}, c.cur.providers, null);
         const hard = f && s.health(f.hardRate, s.BOUNCE_METRICS[1][4]);
         const complaint = f && s.health(f.complaintRate, s.BOUNCE_METRICS[4][4]);
         const sent = f && f.sends > 0;

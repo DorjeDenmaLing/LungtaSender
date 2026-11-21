@@ -16,6 +16,7 @@ import (
 // refuses it, so each must be listed here on purpose.
 var denmaHubRoutes = []string{
 	"DELETE /api/denma/domains/:domain",
+	"DELETE /api/denma/gmail",
 	"DELETE /api/denma/domains/:domain/centers/:slug",
 	"DELETE /api/denma/hub/signup-hooks/:id",
 	"DELETE /api/denma/mcp/connector",
@@ -42,6 +43,8 @@ var denmaHubRoutes = []string{
 	"GET /admin/denma-twofa",
 	"GET /admin/domains",
 	"GET /admin/domains/:domain",
+	"GET /admin/domains/gmail/callback",
+	"GET /admin/domains/gmail/connect",
 	"GET /admin/forgot",
 	"GET /admin/hub",
 	"GET /admin/login",
@@ -105,6 +108,7 @@ var denmaHubRoutes = []string{
 	"POST /api/denma/domains/:domain/centers",
 	"POST /api/denma/domains/:domain/check",
 	"POST /api/denma/domains/:domain/fix",
+	"POST /api/denma/gmail/fetch",
 	"POST /api/denma/hub/signup-hooks",
 	"POST /api/denma/hub/signup-hooks/:id/key",
 	"POST /api/denma/hub/signup-hooks/:id/notify-secret",
@@ -123,6 +127,7 @@ var denmaHubRoutes = []string{
 	"POST /api/users/:id/password-reset", // answers 404: centers only (cmd/denma_password_reset.go)
 	"POST /webhooks/service/:service",
 	"PUT /api/denma/centers/:slug/status",
+	"PUT /api/denma/gmail",
 	"PUT /api/denma/hub/signup-hooks/:id",
 	"PUT /api/denma/mcp/connector",
 	"PUT /api/denma/media/:id/label",

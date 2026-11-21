@@ -114,6 +114,8 @@ type denmaPeriod struct {
 	FeedbackSends    int `db:"feedback_sends" json:"feedback_sends"`         // to providers that report complaints (cmd/denma_feedback.go)
 	FeedbackComplain int `db:"feedback_complaint" json:"feedback_complaint"` // complaints since the record of e-mails starts
 	NewSubscribers   int `db:"new_subscribers" json:"new_subscribers"`
+
+	Providers *denmaProviderFigures `db:"-" json:"providers"` // SES's and Gmail's own (cmd/denma_provider_stats.go)
 }
 
 // S. is replaced with the center's schema; $1 and $2 are the period's start and end.
@@ -212,7 +214,18 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 		db  = d.current().db
 		key = fmt.Sprintf("stats|%v", t)
 		out = make([]denmaHubCenter, len(reg))
+		ids = map[string]int{}
 	)
+	var idRows []struct {
+		Slug string `db:"slug"`
+		ID   int    `db:"id"`
+	}
+	if err := db.Select(&idRows, `SELECT slug, id FROM denma.centers`); err != nil {
+		return denmaInternal(err)
+	}
+	for _, x := range idRows {
+		ids[x.Slug] = x.ID
+	}
 	denmaEach(len(reg), func(i int) {
 		x := reg[i]
 		r := &out[i]
@@ -234,6 +247,12 @@ func (a *App) DenmaHubStats(c echo.Context) error {
 			}
 			if err == nil {
 				err = db.Get(f.prev, denmaInSchema(period, x.Schema), t[2], t[3])
+			}
+			if err == nil {
+				f.cur.Providers, err = denmaProvidersFor(db, ids[x.Slug], t[0], t[1]) // cmd/denma_provider_stats.go
+			}
+			if err == nil {
+				f.prev.Providers, err = denmaProvidersFor(db, ids[x.Slug], t[2], t[3])
 			}
 			return f, err
 		})

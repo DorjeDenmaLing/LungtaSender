@@ -46,6 +46,14 @@ function total(list, k) {
       KEYS.forEach((x) => { out[x] += c[k][x] || 0; });
     }
   });
+  // SES's own counts for one center; for several, the center with Gmail's highest rate.
+  const pr = list.map((c) => c[k] && c[k].providers).filter(Boolean);
+  if (list.length === 1) {
+    out.providers = pr[0] || null;
+  } else {
+    const worst = pr.filter((x) => x.gmail_avg != null).sort((a, b) => b.gmail_avg - a.gmail_avg)[0];
+    out.providers = worst ? { gmail_avg: worst.gmail_avg } : null;
+  }
   return out;
 }
 
@@ -126,8 +134,11 @@ function component() {
 
     render() {
       const list = this.selected ? [this.selected] : this.centers;
-      const cur = hubFigures(total(list, 'cur'));
-      const prev = hubFigures(total(list, 'prev'));
+      const tc = total(list, 'cur');
+      const tp = total(list, 'prev');
+      const cur = hubFigures(tc);
+      const prev = hubFigures(tp);
+      s.providerPair(cur, prev, tc.providers, tp.providers);
 
       this.perf.cells = METRICS.map((m) => ({
         key: m[0],
@@ -140,7 +151,7 @@ function component() {
       this.bounce.cells = s.BOUNCE_METRICS.map((m) => ({
         key: m[0],
         label: m[1],
-        help: m[3],
+        help: s.bounceHelp(m, cur),
         value: s.fmt(cur[m[0]], m[2]),
         change: s.change(cur[m[0]], prev[m[0]], false, m[2], true),
         health: s.health(cur[m[0]], m[4]),

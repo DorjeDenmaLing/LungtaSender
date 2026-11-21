@@ -57,7 +57,7 @@ func denmaInitDomains(db *sqlx.DB) error {
 			domain    TEXT NOT NULL REFERENCES denma.sending_domains(domain) ON DELETE CASCADE,
 			center_id INTEGER NOT NULL REFERENCES denma.centers(id) ON DELETE CASCADE,
 			PRIMARY KEY (domain, center_id)
-		);`)
+		);` + denmaProviderSchemaSQL) // cmd/denma_provider_stats.go
 	return err
 }
 
@@ -93,6 +93,8 @@ type denmaSES interface {
 	SetNotifications(ctx context.Context, domain, topic string) error
 	// Reputation is the account's status and bounce and complaint rates (cmd/denma_ses_reputation.go).
 	Reputation(ctx context.Context) (denmaSESReputation, error)
+	// DomainDays is each domain's complaints and deliveries to reporting providers, by UTC day (cmd/denma_provider_stats.go).
+	DomainDays(ctx context.Context, domains []string, from, to time.Time) ([]denmaSESDomainDay, error)
 	// No Delete: identities are deleted in the SES console.
 }
 
@@ -1033,6 +1035,8 @@ func (d *denmaCenters) addDomain(domain, mailFrom string, centers []int) (denmaD
 func initDenmaDomainHandlers(g *echo.Group, a *App) {
 	g.GET(path.Join(uriAdmin, "/domains"), a.ViewDenmaDomains)
 	g.GET(path.Join(uriAdmin, "/domains/:domain"), a.ViewDenmaDomain)
+	g.GET(path.Join(uriAdmin, "/domains/gmail/connect"), a.ViewDenmaGmailConnect)   // cmd/denma_provider_stats.go
+	g.GET(path.Join(uriAdmin, "/domains/gmail/callback"), a.ViewDenmaGmailCallback) // cmd/denma_provider_stats.go
 }
 
 func initDenmaDomainAPIHandlers(g *echo.Group, a *App) {
@@ -1042,6 +1046,9 @@ func initDenmaDomainAPIHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/domains/:domain/centers", a.DenmaAddDomainCenter)
 	g.DELETE("/api/denma/domains/:domain/centers/:slug", a.DenmaRemoveDomainCenter)
 	g.DELETE("/api/denma/domains/:domain", a.DenmaDeleteDomain)
+	g.PUT("/api/denma/gmail", a.DenmaGmailSave) // cmd/denma_provider_stats.go
+	g.DELETE("/api/denma/gmail", a.DenmaGmailDisconnect)
+	g.POST("/api/denma/gmail/fetch", a.DenmaGmailFetch)
 }
 
 // denmaDomainRow is a domain on the pages.
@@ -1053,9 +1060,11 @@ type denmaDomainRow struct {
 	Badge     string             `json:"badge"`
 	CheckedAt *time.Time         `json:"checked_at"`
 	CreatedAt time.Time          `json:"created_at"`
-	Centers   []denmaOtherCenter `json:"centers"` // it's for
-	Senders   []denmaOtherCenter `json:"senders"` // whose sender is on it
-	Hub       bool               `json:"hub"`     // the hub's sender is on it
+	Centers   []denmaOtherCenter `json:"centers"`    // it's for
+	Senders   []denmaOtherCenter `json:"senders"`    // whose sender is on it
+	Hub       bool               `json:"hub"`        // the hub's sender is on it
+	GmailRate *float64           `json:"gmail_rate"` // its latest day's Gmail spam rate (cmd/denma_provider_stats.go)
+	GmailDay  *string            `json:"gmail_day"`
 }
 
 // domainRows reads the domains (or one).
@@ -1084,6 +1093,15 @@ func (d *denmaCenters) domainRows(only string) ([]denmaDomainRow, error) {
 		return nil, err
 	}
 	hub := denmaSenderDomain(d.current().ko.String("app.from_email"))
+	var gmail []struct {
+		Domain string  `db:"domain"`
+		Day    string  `db:"day"`
+		Rate   float64 `db:"rate"`
+	}
+	if err := d.db().Select(&gmail, `SELECT DISTINCT ON (domain) domain, day::TEXT AS day, gmail_spam_rate AS rate
+		FROM denma.provider_days WHERE gmail_spam_rate IS NOT NULL AND ($1 = '' OR domain = $1) ORDER BY domain, day DESC`, only); err != nil {
+		return nil, err
+	}
 
 	out := make([]denmaDomainRow, len(rows))
 	for i, r := range rows {
@@ -1106,6 +1124,11 @@ func (d *denmaCenters) domainRows(only string) ([]denmaDomainRow, error) {
 			}
 		}
 		sort.Slice(x.Senders, func(i, j int) bool { return strings.ToLower(x.Senders[i].Name) < strings.ToLower(x.Senders[j].Name) })
+		for _, g := range gmail {
+			if g.Domain == r.Domain {
+				x.GmailRate, x.GmailDay = &g.Rate, &g.Day
+			}
+		}
 		out[i] = x
 	}
 	return out, nil
@@ -1118,6 +1141,7 @@ type denmaDomainsView struct {
 	Region  string
 	Off     string // why there's no SES
 	Ref     denmaDomainRef
+	Gmail   denmaGmailView // cmd/denma_provider_stats.go
 }
 
 // ViewDenmaDomains renders the Sending domains page (views/denma-domains.html).
@@ -1157,6 +1181,9 @@ func (d *denmaCenters) domainsView(c echo.Context, only, title string) (denmaDom
 	}
 	v := denmaDomainsView{adminView: newAdminView(c, title, "", "denma.domains"), Domains: rows, Centers: []denmaOtherCenter{}}
 	if err := d.db().Select(&v.Centers, `SELECT slug, name FROM denma.centers ORDER BY LOWER(name)`); err != nil {
+		return v, denmaInternal(err)
+	}
+	if v.Gmail, err = d.gmailView(c.QueryParam("gmail")); err != nil {
 		return v, denmaInternal(err)
 	}
 	s, why := d.ses()

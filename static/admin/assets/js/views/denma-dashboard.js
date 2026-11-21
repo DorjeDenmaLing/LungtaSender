@@ -113,7 +113,7 @@ function component(opts) {
       }
     },
 
-    // fb: emails to providers that report complaints, { cur, prev, since } (cmd/denma_feedback.go).
+    // fb: emails to providers that report complaints, { cur, prev, since, providers } (cmd/denma_feedback.go).
     renderBounces(rows, sends, prevSends, fb, p) {
       const cur = bounceCounts(rows, p.cur);
       const prev = bounceCounts(rows, p.prev);
@@ -128,11 +128,13 @@ function component(opts) {
       }).length;
       cur.complaintRate = fb && rate(counted(p.cur), fb.cur);
       prev.complaintRate = fb && rate(counted(p.prev), fb.prev);
+      const pr = (fb && fb.providers) || {};
+      s.providerPair(cur, prev, pr.cur, pr.prev);
 
       this.bounce.cells = BOUNCE_METRICS.map((m) => ({
         key: m[0],
         label: m[1],
-        help: m[3],
+        help: s.bounceHelp(m, cur),
         value: s.fmt(cur[m[0]], m[2]),
         change: s.change(cur[m[0]], prev[m[0]], false, m[2], true),
         health: health(cur[m[0]], m[4]),

@@ -4,6 +4,7 @@ import Alpine from 'alpinejs';
 import { api, urls } from '../main.js';
 import { centerPicker, centerTable } from '../denma-hub-ui.js';
 import * as u from '../utils.js';
+import * as s from '../denma-stats.js';
 
 const STATUS_ORDER = ['failed', 'missing', 'error', 'waiting', '', 'incomplete', 'ready'];
 
@@ -31,6 +32,32 @@ const ago = (iso) => (iso ? denmaAgo(iso) : 'Never');
 
 const domainURL = (domain) => `${urls.admin}/domains/${encodeURIComponent(domain)}`;
 
+const GMAIL_CLASS = { warning: 'denma-warn', danger: 'text-danger' };
+
+// A row for centerTable: name is the domain, slug what's found, state the status.
+function domainRow(d) {
+  const names = d.centers.map((c) => c.name);
+  const h = s.health(d.gmail_rate, s.BOUNCE_METRICS.find((m) => m[0] === 'gmailSpam')[4]);
+  return {
+    ...d,
+    name: d.domain,
+    slug: `${d.domain} ${names.join(' ')} ${d.centers.map((c) => c.slug).join(' ')}`.toLowerCase(),
+    state: d.checked_at ? d.state.status : '',
+    centerNames: names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', '),
+    checkedText: d.checked_at ? ago(d.checked_at) : 'Not yet',
+    gmailText: d.gmail_rate != null ? s.fmt(d.gmail_rate, 'pct2') : '—',
+    gmailTitle: d.gmail_day ? `Its latest day in Postmaster Tools: ${s.fmtDate(new Date(`${d.gmail_day}T12:00:00`))}` : '',
+    gmailClass: (h && GMAIL_CLASS[h.variant]) || '',
+    sort: {
+      name: d.domain,
+      centers: names[0] ? names[0].toLowerCase() : null,
+      status: STATUS_ORDER.indexOf(d.checked_at ? d.state.status : ''),
+      gmail: d.gmail_rate,
+      checked: d.checked_at,
+    },
+  };
+}
+
 // The list.
 function denmaDomains() {
   const table = centerTable();
@@ -44,24 +71,10 @@ function denmaDomains() {
     add: { domain: '', mail_from: '' },
     mailFromEdited: false,
 
-    // Rows for centerTable: name is the domain, slug what's found, state the status.
-    rows: (window._denmaDomains || []).map((d) => {
-      const names = d.centers.map((c) => c.name);
-      return {
-        ...d,
-        name: d.domain,
-        slug: `${d.domain} ${names.join(' ')} ${d.centers.map((c) => c.slug).join(' ')}`.toLowerCase(),
-        state: d.checked_at ? d.state.status : '',
-        centerNames: names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', '),
-        checkedText: d.checked_at ? ago(d.checked_at) : 'Not yet',
-        sort: {
-          name: d.domain,
-          centers: names[0] ? names[0].toLowerCase() : null,
-          status: STATUS_ORDER.indexOf(d.checked_at ? d.state.status : ''),
-          checked: d.checked_at,
-        },
-      };
-    }),
+    rows: (window._denmaDomains || []).map(domainRow),
+    gmail: window._denmaGmail || {},
+    gmailForm: { client_id: (window._denmaGmail || {}).client_id || '', client_secret: '' },
+    gmailConnectURL: `${urls.admin}/domains/gmail/connect`,
 
     url: domainURL,
 
@@ -77,6 +90,40 @@ function denmaDomains() {
       const to = Math.min(n, page * this.tbl.perPage);
       const range = n > this.tbl.perPage ? `${from}–${to} of ` : '';
       return `${range}${n.toLocaleString()} domain${n === 1 ? '' : 's'}${of}`;
+    },
+
+    gmailFetched() {
+      return this.gmail.fetched_at ? `Fetched ${ago(this.gmail.fetched_at).toLowerCase()}.` : 'Not fetched yet.';
+    },
+
+    // The connection's problems, the general one first.
+    gmailErrors() {
+      return Object.entries(this.gmail.errors || {})
+        .map(([domain, message]) => ({ domain, message }))
+        .sort((a, b) => a.domain.localeCompare(b.domain));
+    },
+
+    gmailUpdate(data) {
+      this.gmail = data.gmail;
+      this.gmailForm = { client_id: data.gmail.client_id, client_secret: '' };
+      this.rows = (data.domains || []).map(domainRow);
+    },
+
+    async onGmailSave() {
+      this.gmailUpdate(await api('gmail', '/denma/gmail', 'PUT', this.gmailForm));
+      u.toast(this.gmail.connected ? 'Saved.' : 'Saved. Now connect with Google.', 'success');
+    },
+
+    async onGmailFetch() {
+      this.gmailUpdate(await api('gmail', '/denma/gmail/fetch', 'POST'));
+      u.toast(this.gmailErrors().length ? "Fetched, with problems: see Gmail Postmaster Tools." : 'Fetched.', this.gmailErrors().length ? 'danger' : 'success');
+    },
+
+    async onGmailDisconnect() {
+      if (!(await u.confirm("Disconnect Gmail Postmaster Tools? The figures fetched so far are kept; new ones aren't fetched until it's connected again."))) {
+        return;
+      }
+      this.gmailUpdate(await api('gmail', '/denma/gmail', 'DELETE'));
     },
 
     onAdd() {

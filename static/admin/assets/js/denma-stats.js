@@ -220,8 +220,31 @@ export const BOUNCE_METRICS = [
   ['hardRate', 'Hard bounce rate', 'pct2', 'Hard bounces as a share of sends. Amazon SES reviews accounts at 5% and can pause sending at 10%.', [0.02, 0.05]],
   ['soft', 'Soft bounces', 'count', 'Temporary failures (mailbox full, server busy). listmonk records these but keeps sending.'],
   ['complaint', 'Complaints', 'count', 'People who marked an email as spam. listmonk blocklists them.'],
-  ['complaintRate', 'Complaint rate', 'pct2', "Complaints as a share of emails to Outlook, Hotmail, Yahoo, AOL and Comcast, which report them (Gmail doesn't), as Amazon SES counts them. SES reviews accounts at 0.1% and can pause sending at 0.5%.", [0.0005, 0.001]],
+  ['complaintRate', 'Complaint rate', 'pct2', "Complaints as a share of emails to Outlook, Hotmail, Yahoo, AOL and Comcast, which report them (Gmail doesn't), as Amazon SES counts them. It should be under 0.1%.", [0.0005, 0.001]],
+  ['gmailSpam', 'Gmail spam rate', 'pct2', "Gmail's own spam rate for the center's domain, the average of its days in this period. Postmaster Tools can be 2 to 4 days behind. It should be under 0.1%.", [0.001, 0.003]],
 ];
+
+const COMPLAINT_HELP_SES = "Amazon SES's own complaint rate for the center's domain. It should be under 0.1%.";
+
+// providerPair puts SES's own complaint rate and Gmail's spam rate (cmd/denma_provider_stats.go) into a period's
+// figures and the previous one's; a change is shown only between rates counted the same way.
+export function providerPair(cur, prev, pc, pp) {
+  [[cur, pc], [prev, pp]].forEach(([f, p]) => {
+    if (p && p.ses_deliveries > 0) {
+      f.complaintRate = p.ses_complaints / p.ses_deliveries;
+      f.complaintSES = true;
+    }
+    f.gmailSpam = p && p.gmail_avg != null ? p.gmail_avg : null;
+  });
+  if (!!cur.complaintSES !== !!prev.complaintSES) {
+    prev.complaintRate = null;
+  }
+}
+
+// bounceHelp is a Bounces cell's hint (m, of BOUNCE_METRICS) for the figures f.
+export function bounceHelp(m, f) {
+  return m[0] === 'complaintRate' && f.complaintSES ? COMPLAINT_HELP_SES : m[3];
+}
 
 export function health(v, bands) {
   if (v == null || !bands) {
