@@ -53,6 +53,7 @@ type Emailer struct {
 	pools map[string][]*Server
 
 	denmaSent func(models.Message, error) // denma: denma.go
+	denmaTags func(models.Message) string // denma: denma.go
 }
 
 // NormalizeAddr normalizes an e-mail address (strip spaces, lowercase).
@@ -184,6 +185,7 @@ func (e *Emailer) Push(m models.Message) error {
 		}
 		em.Headers.Set(k, v[0])
 	}
+	e.denmaTag(em.Headers, m) // denma: denma.go
 
 	// Generate Message-Id based on the From address.
 	if em.Headers.Get(hdrMessageID) == "" {

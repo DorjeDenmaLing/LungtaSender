@@ -71,3 +71,26 @@ func DenmaSenderHeader(name string) bool {
 		return strings.HasPrefix(k, "X-Ses-")
 	}
 }
+
+// hdrSESTags holds the SES message tags of an e-mail sent through SES.
+const hdrSESTags = "X-Ses-Message-Tags"
+
+// DenmaTagWith has e give each message the SES message tags f returns ("name=value, …").
+func (e *Emailer) DenmaTagWith(f func(m models.Message) string) {
+	e.denmaTags = f
+}
+
+// denmaTag adds e's message tags for m to h, after any the server's headers give.
+func (e *Emailer) denmaTag(h textproto.MIMEHeader, m models.Message) {
+	if e.denmaTags == nil {
+		return
+	}
+	t := e.denmaTags(m)
+	if t == "" {
+		return
+	}
+	if v := h.Get(hdrSESTags); v != "" {
+		t = v + ", " + t
+	}
+	h.Set(hdrSESTags, t)
+}
