@@ -74,22 +74,21 @@ function chart(days, width) {
     }
   });
 
-  // A line through consecutive days with a figure, and a dot on each.
+  // A line through the days with a figure, dashed across days without one, and a dot on each.
   [[ses, 'ses'], [gmail, 'gmail']].forEach(([vals, c]) => {
-    let pts = [];
-    const flush = () => {
-      if (pts.length > 1) node(svg, 'polyline', { points: pts.join(' '), class: `line ${c}` });
-      pts = [];
-    };
+    let prev = null;
     vals.forEach((v, i) => {
-      if (v == null) {
-        flush();
-        return;
+      if (v == null) return;
+      const pt = [x(i).toFixed(1), y(v).toFixed(1)];
+      if (prev) {
+        const gap = i - prev.i > 1 ? ' gap' : '';
+        node(svg, 'line', { x1: prev.pt[0], y1: prev.pt[1], x2: pt[0], y2: pt[1], class: `line ${c}${gap}` });
       }
-      pts.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-      node(svg, 'circle', { cx: x(i), cy: y(v), r: 3, class: `dot ${c}` });
+      prev = { i, pt };
     });
-    flush();
+    vals.forEach((v, i) => {
+      if (v != null) node(svg, 'circle', { cx: x(i), cy: y(v), r: 3, class: `dot ${c}` });
+    });
   });
   return svg;
 }

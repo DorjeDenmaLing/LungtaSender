@@ -780,6 +780,11 @@ section.analytics {
             &.gmail {
                 stroke: var(--denma-gmail);
             }
+
+            &.gap {
+                stroke-width: 1.5;
+                stroke-dasharray: 3 4;
+            }
         }
 
         .dot {
