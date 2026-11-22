@@ -3038,6 +3038,41 @@ small[data-hint]:empty {
     }
 }
 
+/* On desktop, a campaign's header is one row: its name, cut short if long, and status, then its buttons; they go below when there's no room. */
+@media (min-width: 770px) {
+  section.campaign > .page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+
+    > :first-child {
+      flex: 1 1 20rem;
+      min-width: 0;
+    }
+
+    > :last-child:not(:first-child) {
+      flex: 0 0 auto;
+    }
+
+    > :first-child > .hstack {
+      flex-wrap: nowrap;
+
+      > :not(.page-title) {
+        flex-shrink: 0;
+      }
+    }
+
+    .page-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
 section.campaign {
     /* The content editor is as tall as the screen, whichever format. */
     .editor .editor-body {
