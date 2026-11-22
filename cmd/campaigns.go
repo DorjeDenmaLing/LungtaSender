@@ -85,7 +85,6 @@ type campaignView struct {
 
 	DenmaPlainAuto bool               // denma: the center makes plain text automatically (cmd/denma_features.go)
 	DenmaReplyTo   string             // denma: the center's default reply-to (cmd/denma_reply_to.go)
-	DenmaFrom      denmaFromView      // denma: the center's e-mail as the From (cmd/denma_center_from.go)
 	DenmaAttachMB  int                // denma: the center's limit on attachments (cmd/denma_attachlimit.go)
 	DenmaAttachTab bool               // denma: the Attachments tab is shown (cmd/denma_attachlimit.go)
 	DenmaFailures  *denmaSendFailures // denma: those it couldn't send to (cmd/denma_retries.go)
@@ -119,7 +118,6 @@ func (a *App) ViewNewCampaign(c echo.Context) error {
 		AllLists:        allLists,
 		SelectedListIDs: selIDs,
 		DenmaReplyTo:    a.denmaReplyTo(),      // denma
-		DenmaFrom:       a.denmaCenterFrom(),   // denma
 		DenmaAttachMB:   a.denmaAttachMB(),     // denma
 		DenmaAttachTab:  a.denmaAttachTab(nil), // denma
 	}
@@ -197,7 +195,6 @@ func (a *App) ViewCampaign(c echo.Context) error {
 
 		DenmaPlainAuto: a.denmaPlainAuto(),                   // denma
 		DenmaReplyTo:   a.denmaReplyTo(),                     // denma
-		DenmaFrom:      a.denmaCenterFrom(),                  // denma
 		DenmaAttachMB:  a.denmaAttachMB(),                    // denma
 		DenmaAttachTab: a.denmaAttachTab(&camp),              // denma
 		DenmaFailures:  a.denmaCampaignFailuresView(camp.ID), // denma
@@ -375,6 +372,7 @@ func (a *App) PreviewCampaign(c echo.Context) error {
 		if contentType == models.CampaignContentTypeVisual {
 			camp.TemplateBody = ""
 		}
+		denmaPreviewFrom(c, &camp) // denma: cmd/denma_from_contact.go
 	}
 
 	// Use a dummy campaign ID to prevent views and clicks from {{ TrackView }}
@@ -823,8 +821,9 @@ func (a *App) TestCampaign(c echo.Context) error {
 	camp.ContentType = req.ContentType
 	camp.Headers = req.Headers
 	camp.TemplateID = req.TemplateID
-	camp.PreviewText = req.PreviewText // denma: as unsaved
-	camp.ReplyTo = req.ReplyTo         // denma: as unsaved
+	camp.PreviewText = req.PreviewText     // denma: as unsaved
+	camp.ReplyTo = req.ReplyTo             // denma: as unsaved
+	camp.FromAsContact = req.FromAsContact // denma: as unsaved
 	for _, id := range req.MediaIDs {
 		if id > 0 {
 			camp.MediaIDs = append(camp.MediaIDs, int64(id))

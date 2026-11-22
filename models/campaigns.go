@@ -106,6 +106,9 @@ type Campaign struct {
 	// denma: where replies go, "" for the center's default (cmd/denma_reply_to.go).
 	ReplyTo string `db:"denma_reply_to" json:"reply_to"`
 
+	// denma: its footer shows its From address as the center's e-mail (cmd/denma_from_contact.go).
+	FromAsContact bool `db:"denma_from_as_contact" json:"from_as_contact"`
+
 	// denma: when failed sends are tried again (a retry run), and how many (cmd/denma_retries.go).
 	DenmaRetryAt null.Time `db:"denma_retry_at" json:"-"`
 	DenmaFailed  int       `db:"denma_failed" json:"denma_failed"`

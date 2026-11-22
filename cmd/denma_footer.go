@@ -251,6 +251,11 @@ func denmaAnd(s []string) string {
 
 // denmaFooterCheck refuses an e-mail, as rendered, that lacks the center's details.
 func denmaFooterCheck(slug string, body []byte) error {
+	return denmaFooterCheckWith(slug, body, nil)
+}
+
+// denmaFooterCheckWith is denmaFooterCheck, each detail shown as the center's or as one of alts.
+func denmaFooterCheckWith(slug string, body []byte, alts []denmaContact) error {
 	if slug == "" {
 		return nil
 	}
@@ -258,7 +263,7 @@ func denmaFooterCheck(slug string, body []byte) error {
 	if !c.complete() {
 		return errDenmaNoContact
 	}
-	if miss := denmaDetailsMissing(string(body), true, c); len(miss) > 0 {
+	if miss := denmaDetailsMissingSince(string(body), c, alts); len(miss) > 0 {
 		return denmaFooterError("The e-mail", miss)
 	}
 	return nil
@@ -321,14 +326,15 @@ func denmaPrevContactsOf(slug string) []denmaContact {
 	return list
 }
 
-// denmaFooterCheckSent is denmaFooterCheck for an e-mail as it's sent, accepting previous details.
-func denmaFooterCheckSent(slug string, body []byte) error {
-	err := denmaFooterCheck(slug, body)
+// denmaFooterCheckSent is denmaFooterCheck for an e-mail as it's sent, accepting previous details and its campaign's.
+func denmaFooterCheckSent(slug string, camp *models.Campaign, body []byte) error {
+	alts := denmaCampaignContacts(slug, camp)
+	err := denmaFooterCheckWith(slug, body, alts)
 	if err == nil || errors.Is(err, errDenmaNoContact) {
 		return err
 	}
-	prevs := denmaPrevContactsOf(slug)
-	if len(prevs) == 0 {
+	prevs := append(alts, denmaPrevContactsOf(slug)...)
+	if len(prevs) == len(alts) {
 		return err
 	}
 	if left := denmaDetailsMissingSince(string(body), denmaContactOf(slug), prevs); len(left) > 0 {
@@ -379,7 +385,7 @@ func (a *App) denmaCheckSample(camp *models.Campaign, msg []byte) error {
 	if err := a.denmaCheckLinks(denmaCampaignSource(camp)); err != nil {
 		return denmaBadRequest(err)
 	}
-	return a.denmaCheckMessage(msg)
+	return a.denmaCheckCampaignMessage(camp, msg) // cmd/denma_from_contact.go
 }
 
 // denmaCampaignSource is a campaign's HTML as its e-mail is made: its template's and its own.

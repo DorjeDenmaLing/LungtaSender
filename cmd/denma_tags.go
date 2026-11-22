@@ -44,7 +44,7 @@ func denmaNormTags(in []string) []string {
 
 // denmaCampaignColumnsSQL adds the columns listmonk's campaign and export queries read.
 const denmaCampaignColumnsSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_tags TEXT[] NOT NULL DEFAULT '{}';` +
-	denmaPreviewTextSQL + denmaReplyToSQL + denmaRetriesSQL + denmaNamesColumnsSQL
+	denmaPreviewTextSQL + denmaReplyToSQL + denmaFromContactSQL + denmaRetriesSQL + denmaNamesColumnsSQL
 
 // denmaPreviewTextSQL adds the campaign's preview text (models.Campaign PreviewText).
 const denmaPreviewTextSQL = `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS denma_preview_text TEXT NOT NULL DEFAULT '';`
@@ -487,8 +487,8 @@ func (a *App) denmaSaveCampaign(id int, o *campReq, out *models.Campaign) error 
 		tags = []string{}
 	}
 	err := denmaInFirstVersion(a.db, "campaign", id, func(tx *sqlx.Tx) error {
-		_, err := tx.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4 WHERE id = $1`,
-			id, pq.Array(tags), o.PreviewText, o.ReplyTo)
+		_, err := tx.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4, denma_from_as_contact = $5 WHERE id = $1`,
+			id, pq.Array(tags), o.PreviewText, o.ReplyTo, o.FromAsContact)
 		return err
 	})
 	if err != nil {
@@ -498,5 +498,6 @@ func (a *App) denmaSaveCampaign(id int, o *campReq, out *models.Campaign) error 
 	out.SubscriberTags = tags
 	out.PreviewText = o.PreviewText
 	out.ReplyTo = o.ReplyTo
+	out.FromAsContact = o.FromAsContact
 	return nil
 }

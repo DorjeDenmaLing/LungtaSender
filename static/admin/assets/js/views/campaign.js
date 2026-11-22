@@ -11,7 +11,6 @@ import * as u from '../utils.js';
 import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain text
 import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber tags
 import { denmaFailures } from '../denma-failures.js'; // denma: failed sends
-import { denmaCenterFrom } from '../denma-center-from.js'; // denma: the center's e-mail as the From
 import { denmaStartConfirm } from '../denma-start.js'; // denma: the start confirmation
 import { denmaUnsaved } from '../denma-unsaved.js'; // denma: asks before leaving unsaved
 import { denmaEditing, denmaHistory, denmaVersions } from '../denma-versions.js'; // denma: saves over the version it started from; its history; who else is editing
@@ -52,7 +51,6 @@ function component(camp, sel) {
     ...denmaPlainText(), // denma
     denmaTagAutocomplete, // denma
     ...denmaFailures(), // denma
-    ...denmaCenterFrom(isNew, c.from_email), // denma
     ...denmaStartConfirm(), // denma
     ...denmaUnsaved({ skip: ['testEmails', 'status', 'uuid'], save() { return this.isNew ? this.onCreate() : (this.canEdit ? this.onSave() : this.onSaveArchive()); } }), // denma
     ...denmaVersions({ kind: 'campaign', version: c.version, id() { return this.form.id; }, base() { const f = this.denmaSavedForm(); return f && this._payload.call({ form: f }); } }), // denma
@@ -67,7 +65,7 @@ function component(camp, sel) {
     _saved: false,
 
     preview: {
-      title: c.name || '', url: '', loading: true, templateID: null, contentType: '', archiveMeta: '', body: '', inbox: null, // denma: inbox
+      title: c.name || '', url: '', loading: true, templateID: null, contentType: '', archiveMeta: '', body: '', inbox: null, from: null, // denma: inbox; the From and its footer switch
     },
 
     form: {
@@ -80,6 +78,7 @@ function component(camp, sel) {
       preview_text: c.preview_text || '', // denma
       from_email: c.from_email || config.from_email || '',
       reply_to: c.reply_to || '', // denma: cmd/denma_reply_to.go
+      from_as_contact: !!c.from_as_contact, // denma: cmd/denma_from_contact.go
       messenger: c.messenger || 'email',
       content_type: c.content_type || 'richtext',
       tags: Array.isArray(c.tags) ? c.tags : [],
@@ -265,6 +264,7 @@ function component(camp, sel) {
         subscriber_tags: this.form.subscriber_tags.map(String), // denma
         from_email: this.form.from_email,
         reply_to: this.form.reply_to, // denma
+        from_as_contact: this.form.from_as_contact, // denma
         messenger: this.form.messenger,
         type: 'regular',
         tags: this.form.tags,
@@ -297,6 +297,7 @@ function component(camp, sel) {
         subscriber_tags: p.subscriber_tags, // denma
         from_email: p.from_email,
         reply_to: p.reply_to, // denma
+        from_as_contact: p.from_as_contact, // denma
         content_type: p.content_type,
         messenger: p.messenger,
         type: 'regular',
@@ -449,6 +450,7 @@ function component(camp, sel) {
       // denma: the subject and preview text as an inbox shows them.
       const previewText = this.form.content_type !== 'plain' ? this.form.preview_text.trim() : '';
       this.preview.inbox = previewText ? { subject: this.form.subject, text: previewText } : null;
+      this.preview.from = { email: this.form.from_email, asContact: String(this.form.from_as_contact) }; // denma: cmd/denma_from_contact.go
       this.$refs.previewDialog.showModal();
       this.$nextTick(() => this.$refs.previewForm.submit());
     },

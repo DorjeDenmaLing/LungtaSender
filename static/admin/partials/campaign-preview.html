@@ -12,6 +12,9 @@
 				<input type="hidden" name="content_type" :value="preview.contentType" />
 				<input type="hidden" name="archive_meta" :value="preview.archiveMeta" />
 				<input type="hidden" name="body" :value="preview.body" />
+				<template x-if="preview.from">{{/* denma: the unsaved From and its footer switch (cmd/denma_from_contact.go) */}}
+					<span><input type="hidden" name="from_email" :value="preview.from.email" /><input type="hidden" name="from_as_contact" :value="preview.from.asContact" /></span>
+				</template>
 			</form>
 			<template x-if="preview.inbox">{{/* denma: the subject and preview text as an inbox shows them (views/campaign.js onPreviewContent) */}}
 				<p class="preview-inbox" data-testid="preview-inbox"><span class="text-light text-7">In the inbox:</span> <strong x-text="preview.inbox.subject"></strong> <span class="text-light" x-text="preview.inbox.text"></span></p>

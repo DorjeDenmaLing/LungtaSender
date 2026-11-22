@@ -448,6 +448,7 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 	}
 
 	maps.Copy(f, m.tplFuncs)
+	denmaFromContactFuncs(f, c) // denma: denma_from_contact.go
 
 	return f
 }

@@ -34,6 +34,7 @@ const NORM = {
     lists: ids(p.lists),
     subscriber_tags: (p.subscriber_tags || []).map(String),
     from_email: text(p.from_email),
+    from_as_contact: !!p.from_as_contact,
     reply_to: text(p.reply_to),
     messenger: p.messenger || 'email',
     tags: p.tags || [],
@@ -86,7 +87,7 @@ const NORM = {
 const GROUPS = {
   campaign: [
     ['Name', ['name']], ['Subject', ['subject']], ['Preview text', ['preview_text']], ['Lists', ['lists']],
-    ['Tags it goes to', ['subscriber_tags']], ['From', ['from_email']], ['Reply-to', ['reply_to']], ['Messenger', ['messenger']],
+    ['Tags it goes to', ['subscriber_tags']], ['From', ['from_email', 'from_as_contact']], ['Reply-to', ['reply_to']], ['Messenger', ['messenger']],
     ['Tags', ['tags']], ['When to send', ['send_at']], ['Attributes', ['attribs']], ['Template', ['template_id']],
     ['Content', ['content_type', 'body', 'body_source']], ['Plain text', ['altbody']], ['Attachments', ['media']],
     ['Archive', ['archive', 'archive_slug', 'archive_template_id', 'archive_meta']],

@@ -89,7 +89,7 @@ func (a *App) denmaCheckContent(id int) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("templates.errorRendering", "error", err.Error()))
 	}
-	if err := a.denmaCheckMessage(msg.Body()); err != nil {
+	if err := a.denmaCheckCampaignMessage(&camp, msg.Body()); err != nil {
 		return denmaBadRequest(err)
 	}
 	return nil

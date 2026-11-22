@@ -2,7 +2,10 @@ package models
 
 // denma: what a center's e-mails show of it in plain text (cmd/denma_address.go).
 
-import "regexp"
+import (
+	"net/mail"
+	"regexp"
+)
 
 var reDenmaContactTag = regexp.MustCompile(`(\{\{-?\s*)(CenterAddress|CenterWebsite|CenterEmail)(\s*-?\}\})`)
 
@@ -15,4 +18,13 @@ func DenmaAddressText(s string) string {
 // DenmaAltText is a campaign's plain text to compile: its links tracked, and the center's tags as text.
 func DenmaAltText(s string) string {
 	return DenmaTrackText(DenmaAddressText(s))
+}
+
+// DenmaFromAddress is the address of a From ("Name" <a@b> or a@b), or "".
+func DenmaFromAddress(from string) string {
+	a, err := mail.ParseAddress(from)
+	if err != nil {
+		return ""
+	}
+	return a.Address
 }

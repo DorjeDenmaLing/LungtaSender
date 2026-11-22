@@ -63,7 +63,7 @@ CREATE INDEX IF NOT EXISTS denma_versions_automation ON denma_versions (automati
 CREATE OR REPLACE FUNCTION denma_version_data(tbl TEXT, item INT) RETURNS JSONB LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
 SELECT CASE tbl
 WHEN 'campaigns' THEN (SELECT jsonb_build_object('name', c.name, 'subject', c.subject, 'preview_text', c.denma_preview_text,
-    'from_email', c.from_email, 'reply_to', c.denma_reply_to, 'messenger', c.messenger, 'tags', to_jsonb(c.tags),
+    'from_email', c.from_email, 'from_as_contact', c.denma_from_as_contact, 'reply_to', c.denma_reply_to, 'messenger', c.messenger, 'tags', to_jsonb(c.tags),
     'subscriber_tags', to_jsonb(c.denma_tags), 'send_at', c.send_at, 'attribs', c.attribs, 'headers', c.headers,
     'template_id', c.template_id, 'content_type', c.content_type, 'body', c.body, 'body_source', c.body_source,
     'altbody', c.altbody, 'archive', c.archive, 'archive_slug', c.archive_slug,
@@ -142,10 +142,10 @@ END $$;
 DROP TRIGGER IF EXISTS denma_bump_version ON campaigns;
 CREATE TRIGGER denma_bump_version BEFORE UPDATE OF name, subject, from_email, body, altbody, content_type, send_at, headers,
     attribs, tags, messenger, template_id, archive, archive_slug, archive_template_id, archive_meta, body_source,
-    denma_tags, denma_preview_text, denma_reply_to ON campaigns
+    denma_tags, denma_preview_text, denma_reply_to, denma_from_as_contact ON campaigns
     FOR EACH ROW EXECUTE FUNCTION denma_bump_version('name', 'subject', 'from_email', 'body', 'altbody', 'content_type',
     'send_at', 'headers', 'attribs', 'tags', 'messenger', 'template_id', 'archive', 'archive_slug', 'archive_template_id',
-    'archive_meta', 'body_source', 'denma_tags', 'denma_preview_text', 'denma_reply_to');
+    'archive_meta', 'body_source', 'denma_tags', 'denma_preview_text', 'denma_reply_to', 'denma_from_as_contact');
 DROP TRIGGER IF EXISTS denma_bump_version ON templates;
 CREATE TRIGGER denma_bump_version BEFORE UPDATE OF name, subject, body, body_source ON templates
     FOR EACH ROW EXECUTE FUNCTION denma_bump_version('name', 'subject', 'body', 'body_source');
@@ -318,8 +318,8 @@ func (a *App) denmaUpdateCampaign(c echo.Context, id int, o *campReq) (models.Ca
 	if tags == nil {
 		tags = []string{}
 	}
-	if _, err := tx.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4 WHERE id = $1`,
-		id, pq.Array(tags), o.PreviewText, o.ReplyTo); err != nil {
+	if _, err := tx.Exec(`UPDATE campaigns SET denma_tags = $2, denma_preview_text = $3, denma_reply_to = $4, denma_from_as_contact = $5 WHERE id = $1`,
+		id, pq.Array(tags), o.PreviewText, o.ReplyTo, o.FromAsContact); err != nil {
 		return models.Campaign{}, denmaInternal(err)
 	}
 	if err := denmaEndSave(tx, "campaign", id, o.DenmaVersion); err != nil {
