@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-import { Alert, InputLabel, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Alert, InputLabel, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 
 import { TextProps, TextPropsSchema } from '@usewaypoint/block-text';
 
@@ -91,9 +91,7 @@ export default function TextSidebarPanel({ data, setData }: TextSidebarPanelProp
       </Stack>
       {note ? <Alert severity="info" onClose={() => setNote('')}>{note}</Alert> : <></>}
       {format === 'html' ? (
-        <Typography variant="body2" color="text.secondary">
-          Type in the e-mail. **bold**, *italic*, # heading and - list format as you type.
-        </Typography>
+        <></>
       ) : format === 'markdown' ? (
         <MarkdownBar>{content}</MarkdownBar>
       ) : (
