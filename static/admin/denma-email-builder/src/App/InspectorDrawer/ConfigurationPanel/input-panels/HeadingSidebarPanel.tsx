@@ -5,7 +5,6 @@ import { HeadingProps, HeadingPropsDefaults, HeadingPropsSchema } from '@usewayp
 
 import BaseSidebarPanel from './helpers/BaseSidebarPanel';
 import RadioGroupInput from './helpers/inputs/RadioGroupInput';
-import TextInput from './helpers/inputs/TextInput';
 import MultiStylePropertyPanel from './helpers/style-inputs/MultiStylePropertyPanel';
 
 type HeadingSidebarPanelProps = {
@@ -27,14 +26,7 @@ export default function HeadingSidebarPanel({ data, setData }: HeadingSidebarPan
 
   return (
     <BaseSidebarPanel title="Heading block">
-      <TextInput
-        label="Content"
-        rows={3}
-        defaultValue={data.props?.text ?? HeadingPropsDefaults.text}
-        onChange={(text) => {
-          updateData({ ...data, props: { ...data.props, text } });
-        }}
-      />
+      {/* denma: the heading is typed in the e-mail. */}
       <RadioGroupInput
         label="Level"
         defaultValue={data.props?.level ?? HeadingPropsDefaults.level}

@@ -2,6 +2,7 @@
 // src/index.tsx
 import React from "react";
 import { z } from "zod";
+import { sanitizer } from "@usewaypoint/block-text"; // denma: rich text headings
 var COLOR_SCHEMA = z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional();
 var PADDING_SCHEMA = z.object({
   top: z.number(),
@@ -50,7 +51,8 @@ function getFontFamily(fontFamily) {
 var HeadingPropsSchema = z.object({
   props: z.object({
     text: z.string().optional().nullable(),
-    level: z.enum(["h1", "h2", "h3"]).optional().nullable()
+    level: z.enum(["h1", "h2", "h3"]).optional().nullable(),
+    format: z.enum(["html"]).optional().nullable() // denma: rich text, saved as HTML
   }).optional().nullable(),
   style: z.object({
     color: COLOR_SCHEMA,
@@ -79,6 +81,7 @@ function Heading({ props, style }) {
     fontSize: getFontSize(level),
     padding: getPadding(style == null ? void 0 : style.padding)
   };
+  if ((props == null ? void 0 : props.format) === "html") return React.createElement(level, { style: hStyle, dangerouslySetInnerHTML: { __html: sanitizer(text) } }); // denma: rich text
   switch (level) {
     case "h1":
       return /* @__PURE__ */ React.createElement("h1", { style: hStyle }, text);
@@ -99,6 +102,9 @@ function getFontSize(level) {
   }
 }
 export {
+  getFontFamily, // denma: for the rich text heading editor
+  getFontSize, // denma
+  getPadding, // denma
   Heading,
   HeadingPropsDefaults,
   HeadingPropsSchema

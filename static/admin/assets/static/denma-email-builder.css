@@ -1,4 +1,4 @@
-/* denma: the visual e-mail builder's Markdown bar and rich text (denma-email-builder/src/documents/blocks/Text), and phones (assets/js/denma-visual-editor.js). */
+/* denma: the visual e-mail builder's Markdown bar and rich text (denma-email-builder/src/documents/blocks/Text and Heading), and phones (assets/js/denma-visual-editor.js). */
 
 /* The ? at the end of the Markdown bar. */
 .denma-md-help {
@@ -85,11 +85,21 @@
   }
 }
 
-/* Rich text typed in a Text block: as the e-mail shows it. */
+/* Rich text typed in a Text or Heading block: as the e-mail shows it. */
 .denma-rich-text:focus {
   outline: none;
 }
 
 .denma-rich-text li > p {
   margin: 0;
+}
+
+.denma-rich-heading p {
+  margin: 0;
+}
+
+/* Template tags, such as the person's name, shaded while typing. */
+.denma-rich-tag {
+  background: rgba(25, 118, 210, 0.12);
+  border-radius: 3px;
 }

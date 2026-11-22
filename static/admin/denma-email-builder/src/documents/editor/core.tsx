@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { Avatar, AvatarPropsSchema } from '@usewaypoint/block-avatar';
 import { Button, ButtonPropsSchema } from '@usewaypoint/block-button';
 import { Divider, DividerPropsSchema } from '@usewaypoint/block-divider';
-import { Heading, HeadingPropsSchema } from '@usewaypoint/block-heading';
+import { HeadingPropsSchema } from '@usewaypoint/block-heading';
 import { Html, HtmlPropsSchema } from '@usewaypoint/block-html';
 import { Image, ImagePropsSchema } from '@usewaypoint/block-image';
 import { Spacer, SpacerPropsSchema } from '@usewaypoint/block-spacer';
@@ -22,6 +22,7 @@ import ContainerPropsSchema from '../blocks/Container/ContainerPropsSchema';
 import EmailLayoutEditor from '../blocks/EmailLayout/EmailLayoutEditor';
 import EmailLayoutPropsSchema from '../blocks/EmailLayout/EmailLayoutPropsSchema';
 import EditorBlockWrapper from '../blocks/helpers/block-wrappers/EditorBlockWrapper';
+import HeadingEditor from '../blocks/Heading/HeadingEditor'; // denma: headings typed in the e-mail
 import TextEditor from '../blocks/Text/TextEditor';
 
 // Adds an opt-in `embed` flag to the upstream Image props. The renderer
@@ -77,7 +78,7 @@ const EDITOR_DICTIONARY = buildBlockConfigurationDictionary({
     schema: HeadingPropsSchema,
     Component: (props) => (
       <EditorBlockWrapper>
-        <Heading {...props} />
+        <HeadingEditor {...props} />
       </EditorBlockWrapper>
     ),
   },

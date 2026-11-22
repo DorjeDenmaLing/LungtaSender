@@ -1,5 +1,11 @@
-// denma: rich text in Text blocks: the editor's extensions, and converting Markdown and plain text to it.
-import { Editor, Extension, InputRule, Extensions } from '@tiptap/core';
+// denma: rich text in Text and Heading blocks: the editor's extensions, and converting Markdown and plain text to it.
+import { Editor, Extension, InputRule, Extensions, wrappingInputRule } from '@tiptap/core';
+import Blockquote from '@tiptap/extension-blockquote';
+import Document from '@tiptap/extension-document';
+import Strike from '@tiptap/extension-strike';
+import { Color, TextStyle } from '@tiptap/extension-text-style';
+import { Plugin } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 
 import { renderMarkdownString, sanitizer } from '@usewaypoint/block-text';
@@ -28,12 +34,52 @@ const LinkRule = Extension.create({
   },
 });
 
+// Quotes made in the editor have a line down their left.
+export const QUOTE_STYLE = 'margin:0;padding-left:16px;border-left:3px solid #cccccc';
+
+// Quote is a blockquote, started by typing "> ".
+const Quote = Blockquote.extend({
+  addInputRules() {
+    return [wrappingInputRule({ find: /^\s*>\s$/, type: this.type, getAttributes: { style: QUOTE_STYLE } })];
+  },
+});
+
+// Del is strikethrough, saved as <del> as Markdown's ~~ is.
+const Del = Strike.extend({
+  renderHTML({ HTMLAttributes }) {
+    return ['del', HTMLAttributes, 0];
+  },
+});
+
+const TAG_TEXT = /\{\{.*?\}\}/g;
+
+// TagMarks shades template tags ({{ ... }}) in the editor; the text is unchanged.
+const TagMarks = Extension.create({
+  name: 'denmaTagMarks',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      props: {
+        decorations(state) {
+          const marks: Decoration[] = [];
+          state.doc.descendants((node, pos) => {
+            if (!node.isText) return;
+            for (const m of (node.text || '').matchAll(TAG_TEXT)) {
+              marks.push(Decoration.inline(pos + m.index!, pos + m.index! + m[0].length, { class: 'denma-rich-tag' }));
+            }
+          });
+          return DecorationSet.create(state.doc, marks);
+        },
+      },
+    })];
+  },
+});
+
 // BlockStyle keeps the style of paragraphs, headings, lists and links, as Markdown's HTML and plain text converted have them.
 const BlockStyle = Extension.create({
   name: 'denmaBlockStyle',
   addGlobalAttributes() {
     return [{
-      types: ['paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'link'],
+      types: ['paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'blockquote', 'link'],
       attributes: {
         style: {
           default: null,
@@ -49,34 +95,90 @@ const BlockStyle = Extension.create({
 // pastedHtml takes the styles out of pasted HTML.
 export const pastedHtml = (html: string) => html.replace(/\sstyle="[^"]*"/gi, '');
 
+const LINK = {
+  openOnClick: false,
+  autolink: true,
+  HTMLAttributes: { target: null, rel: null, class: null },
+  isAllowedUri: (url: string, ctx: { defaultValidate: (u: string) => boolean }) => TEMPLATE_TAG.test(url) || ctx.defaultValidate(url),
+};
+
 export function richTextExtensions(): Extensions {
   return [
     StarterKit.configure({
+      blockquote: false,
       code: false,
       codeBlock: false,
       strike: false,
+      underline: false,
       trailingNode: false,
       heading: { levels: [1, 2, 3] },
-      link: {
-        openOnClick: false,
-        autolink: true,
-        HTMLAttributes: { target: null, rel: null, class: null },
-        isAllowedUri: (url, ctx) => TEMPLATE_TAG.test(url) || ctx.defaultValidate(url),
-      },
+      link: LINK,
     }),
+    Quote,
+    Del,
+    TextStyle,
+    Color,
     LinkRule,
     BlockStyle,
+    TagMarks,
   ];
 }
 
+// headingExtensions are a heading's: one line of italic, strikethrough, colour and links.
+export function headingExtensions(): Extensions {
+  return [
+    Document.extend({ content: 'paragraph' }),
+    StarterKit.configure({
+      document: false,
+      blockquote: false,
+      bold: false,
+      bulletList: false,
+      code: false,
+      codeBlock: false,
+      hardBreak: false,
+      heading: false,
+      horizontalRule: false,
+      listItem: false,
+      listKeymap: false,
+      orderedList: false,
+      strike: false,
+      underline: false,
+      trailingNode: false,
+      link: LINK,
+    }),
+    Del,
+    TextStyle,
+    Color,
+    LinkRule,
+    TagMarks,
+  ];
+}
+
+// headingText is a heading's text as saved: plain text if it has no formatting, else its HTML.
+export function headingText(editor: Editor): { text: string; format?: 'html' } {
+  const html = hexColours(editor.getHTML()).replace(/^<p>|<\/p>$/g, '');
+  if (!/</.test(html)) {
+    return { text: new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html').body.textContent || '' };
+  }
+  return { text: html, format: 'html' };
+}
+
+// headingContent is a heading's text for the editor.
+export const headingContent = (text: string, format?: string | null) => `<p>${format === 'html' ? text : escapeText(text)}</p>`;
+
+const hex = (n: string) => Number(n).toString(16).padStart(2, '0');
+
+// hexColours writes the browser's rgb() colours in styles as #rrggbb.
+const hexColours = (html: string) => html.replace(/ style="[^"]*"/g, (st) => st.replace(/rgb\((\d+), ?(\d+), ?(\d+)\)/g, (_m, r, g, b) => `#${hex(r)}${hex(g)}${hex(b)}`));
+
 // editorHtml is the editor's HTML as saved: a list item's only paragraph unwrapped, as Markdown writes it, and no empty paragraphs.
 export function editorHtml(editor: Editor): string {
-  return editor.getHTML()
+  return hexColours(editor.getHTML())
     .replace(/<li([^>]*)><p>((?:(?!<\/?p[ >]).)*)<\/p><\/li>/g, '<li$1>$2</li>')
     .replace(/<p(?: style="[^"]*")?><\/p>/g, '');
 }
 
-const escapeText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function escapeText(s: string) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 // Whitespace around these tags doesn't show.
 const BLOCK_SPACE = /\s*(<\/?(?:body|p|ul|ol|li|h[1-6]|blockquote|hr|br|div|table|thead|tbody|tr|td|th)\b[^>]*>)\s*/g;
@@ -135,6 +237,7 @@ function mdInline(n: Node): string {
     case 'strong': case 'b': return `**${inner}**`;
     case 'em': case 'i': return `*${inner}*`;
     case 'u': return `<u>${inner}</u>`;
+    case 'del': case 's': return `~~${inner}~~`;
     case 'br': return '\n';
     case 'a': return `[${inner}](${el.getAttribute('href') || ''})`;
     default: return inner;
