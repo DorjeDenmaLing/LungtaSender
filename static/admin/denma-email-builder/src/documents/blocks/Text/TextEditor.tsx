@@ -10,7 +10,7 @@ import { setDocument, useDocument, useSelectedBlockId } from '../../editor/Edito
 import RichBar, { Tool } from './RichBar';
 import { editorHtml, looksLikeMarkdown, markdownHtml, pastedHtml, richTextExtensions, sameHtml } from './richText';
 
-const TOOLS: Tool[] = ['block', 'bold', 'italic', 'strike', 'link', 'bullets', 'numbers', 'colour', 'name', 'clear'];
+const TOOLS: Tool[] = ['quote', 'bold', 'italic', 'strike', 'link', 'bullets', 'numbers', 'colour', 'name', 'clear'];
 
 // Where the click that selected a block was, for the editor's first caret.
 let lastClick: { left: number; top: number } | null = null;
@@ -78,7 +78,7 @@ function RichText({ id, style, props }: TextProps & { id: string }) {
 
   return (
     <div style={{ position: 'relative' }} onClick={(ev) => ev.stopPropagation()}>
-      <RichBar editor={editor} tools={TOOLS} />
+      <RichBar editor={editor} tools={TOOLS} block={style ?? undefined} />
       <div style={wStyle}>
         <EditorContent editor={editor} />
       </div>

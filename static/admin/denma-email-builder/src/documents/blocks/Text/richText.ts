@@ -4,7 +4,7 @@ import Blockquote from '@tiptap/extension-blockquote';
 import Document from '@tiptap/extension-document';
 import Strike from '@tiptap/extension-strike';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
-import { Plugin } from '@tiptap/pm/state';
+import { Plugin, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 
@@ -74,12 +74,12 @@ const TagMarks = Extension.create({
   },
 });
 
-// BlockStyle keeps the style of paragraphs, headings, lists and links, as Markdown's HTML and plain text converted have them.
-const BlockStyle = Extension.create({
-  name: 'denmaBlockStyle',
+// keepStyle keeps the style attribute of these nodes and marks.
+const keepStyle = (name: string, types: string[]) => Extension.create({
+  name,
   addGlobalAttributes() {
     return [{
-      types: ['paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'blockquote', 'link'],
+      types,
       attributes: {
         style: {
           default: null,
@@ -91,6 +91,66 @@ const BlockStyle = Extension.create({
     }];
   },
 });
+
+// BlockStyle keeps the style of paragraphs, lists, quotes and links, as Markdown's HTML and plain text converted have them.
+const BlockStyle = keepStyle('denmaBlockStyle', ['paragraph', 'bulletList', 'orderedList', 'listItem', 'blockquote', 'link']);
+
+// LinkStyle keeps a heading's links' style.
+const LinkStyle = keepStyle('denmaLinkStyle', ['link']);
+
+const rgbHex = (n: string) => Number(n).toString(16).padStart(2, '0');
+
+// toHex is a colour as #rrggbb, from the browser's rgb() or a hex colour.
+export const toHex = (c: string) => c.trim().toLowerCase().replace(/^rgb\((\d+), ?(\d+), ?(\d+)\)$/, (_m, r, g, b) => `#${rgbHex(r)}${rgbHex(g)}${rgbHex(b)}`);
+
+const isColour = (d: string) => /^color\s*:/i.test(d.trim());
+
+// styleColour is the colour a style sets, or null.
+const styleColour = (style?: string | null) => {
+  const d = (style ?? '').split(';').find(isColour);
+  return d ? toHex(d.slice(d.indexOf(':') + 1)) : null;
+};
+
+// withColour is a style with its colour set to colour, or taken out; null if nothing is left.
+const withColour = (style: string | null | undefined, colour: string | null) => {
+  const decls = (style ?? '').split(';').map((d) => d.trim()).filter((d) => d && !isColour(d));
+  if (colour) decls.push(`color: ${colour}`);
+  return decls.length ? `${decls.join('; ')};` : null;
+};
+
+// LinkColour gives a coloured link its text's colour, so its underline matches.
+const LinkColour = Extension.create({
+  name: 'denmaLinkColour',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      appendTransaction(trs, _old, state) {
+        const { link, textStyle } = state.schema.marks;
+        if (!link || !textStyle || !trs.some((t) => t.docChanged)) return null;
+        const tr = state.tr;
+        state.doc.descendants((node, pos) => {
+          if (!node.isText) return;
+          const l = link.isInSet(node.marks);
+          const c = textStyle.isInSet(node.marks)?.attrs.color;
+          if (!l || !c || styleColour(l.attrs.style) === toHex(c)) return;
+          tr.addMark(pos, pos + node.nodeSize, link.create({ ...l.attrs, style: withColour(l.attrs.style, toHex(c)) }));
+        });
+        return tr.docChanged ? tr : null;
+      },
+    })];
+  },
+});
+
+// uncolourLinks takes the colour off the links in the selection (a chain's command).
+export const uncolourLinks = ({ tr }: { tr: Transaction }) => {
+  const { link } = tr.doc.type.schema.marks;
+  const { from, to } = tr.selection;
+  tr.doc.nodesBetween(from, to, (node, pos) => {
+    const l = node.isText && link?.isInSet(node.marks);
+    if (!l || !styleColour(l.attrs.style)) return;
+    tr.addMark(Math.max(pos, from), Math.min(pos + node.nodeSize, to), link.create({ ...l.attrs, style: withColour(l.attrs.style, null) }));
+  });
+  return true;
+};
 
 // pastedHtml takes the styles out of pasted HTML.
 export const pastedHtml = (html: string) => html.replace(/\sstyle="[^"]*"/gi, '');
@@ -111,7 +171,7 @@ export function richTextExtensions(): Extensions {
       strike: false,
       underline: false,
       trailingNode: false,
-      heading: { levels: [1, 2, 3] },
+      heading: false,
       link: LINK,
     }),
     Quote,
@@ -120,6 +180,7 @@ export function richTextExtensions(): Extensions {
     Color,
     LinkRule,
     BlockStyle,
+    LinkColour,
     TagMarks,
   ];
 }
@@ -150,6 +211,8 @@ export function headingExtensions(): Extensions {
     TextStyle,
     Color,
     LinkRule,
+    LinkStyle,
+    LinkColour,
     TagMarks,
   ];
 }
@@ -166,10 +229,8 @@ export function headingText(editor: Editor): { text: string; format?: 'html' } {
 // headingContent is a heading's text for the editor.
 export const headingContent = (text: string, format?: string | null) => `<p>${format === 'html' ? text : escapeText(text)}</p>`;
 
-const hex = (n: string) => Number(n).toString(16).padStart(2, '0');
-
 // hexColours writes the browser's rgb() colours in styles as #rrggbb.
-const hexColours = (html: string) => html.replace(/ style="[^"]*"/g, (st) => st.replace(/rgb\((\d+), ?(\d+), ?(\d+)\)/g, (_m, r, g, b) => `#${hex(r)}${hex(g)}${hex(b)}`));
+const hexColours = (html: string) => html.replace(/ style="[^"]*"/g, (st) => st.replace(/rgb\((\d+), ?(\d+), ?(\d+)\)/g, (_m, r, g, b) => `#${rgbHex(r)}${rgbHex(g)}${rgbHex(b)}`));
 
 // editorHtml is the editor's HTML as saved: a list item's only paragraph unwrapped, as Markdown writes it, and no empty paragraphs.
 export function editorHtml(editor: Editor): string {
@@ -209,14 +270,14 @@ export function toRichText(text: string, markdown: boolean): { html: string } | 
   const out = editorHtml(editor);
   editor.destroy();
   if (canonical(out) !== canonical(html)) {
-    return { reason: 'It has formatting the rich text editor can\'t keep (such as images, tables or styled text), so it stays Markdown.' };
+    return { reason: 'It has formatting the rich text editor can\'t keep (such as headings, which are Heading blocks, or images and tables), so it stays Markdown.' };
   }
   return { html };
 }
 
-// looksLikeMarkdown tells whether pasted text uses Markdown's emphasis, headings, lists, quotes or links.
+// looksLikeMarkdown tells whether pasted text uses Markdown's emphasis, lists, quotes or links.
 export function looksLikeMarkdown(s: string): boolean {
-  return /(\*\*|__)\S|(^|\n)(#{1,3} |[-*+] |\d+\. |> )|\[[^\]]+\]\([^)\s]+\)/.test(s);
+  return /(\*\*|__)\S|(^|\n)([-*+] |\d+\. |> )|\[[^\]]+\]\([^)\s]+\)/.test(s);
 }
 
 // markdownHtml is pasted Markdown as HTML for the editor.

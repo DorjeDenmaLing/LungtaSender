@@ -68,7 +68,7 @@ function RichHeading({ id, style, props }: HeadingProps & { id: string }) {
 
   return (
     <div style={{ position: 'relative' }} onClick={(ev) => ev.stopPropagation()}>
-      <RichBar editor={editor} tools={TOOLS} />
+      <RichBar editor={editor} tools={TOOLS} block={style ?? undefined} />
       <div style={hStyle}>
         <EditorContent editor={editor} />
       </div>

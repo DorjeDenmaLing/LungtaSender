@@ -8,6 +8,7 @@ import {
   FormatItalic,
   FormatListBulleted,
   FormatListNumbered,
+  FormatQuote,
   FormatStrikethrough,
   InsertLink,
   PersonOutline,
@@ -17,20 +18,12 @@ import { Editor, useEditorState } from '@tiptap/react';
 
 import { useDocument } from '../../editor/EditorContext';
 
-import { NEW_LINK, QUOTE_STYLE } from './richText';
+import { NEW_LINK, QUOTE_STYLE, toHex, uncolourLinks } from './richText';
 
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 export const KEY = MAC ? '⌘' : 'Ctrl+';
 
-export type Tool = 'block' | 'bold' | 'italic' | 'strike' | 'link' | 'bullets' | 'numbers' | 'colour' | 'name' | 'clear';
-
-const BLOCKS = [
-  { name: 'Paragraph', level: 0 },
-  { name: 'Heading 1', level: 1 },
-  { name: 'Heading 2', level: 2 },
-  { name: 'Heading 3', level: 3 },
-  { name: 'Quote', level: -1 },
-] as const;
+export type Tool = 'quote' | 'bold' | 'italic' | 'strike' | 'link' | 'bullets' | 'numbers' | 'colour' | 'name' | 'clear';
 
 const NAMES = [
   { name: 'First name', tag: '{{ .Subscriber.FirstName }}' },
@@ -73,30 +66,21 @@ function setLink(editor: Editor) {
   }
 }
 
+// uncolour gives the selection the block's colour.
+const uncolour = (editor: Editor) => editor.chain().focus().unsetColor().removeEmptyTextStyle().command(uncolourLinks).run();
+
 // clearFormat takes bold, italic, strikethrough and colour off the selection; links stay.
 function clearFormat(editor: Editor) {
   const chain = editor.chain().focus();
   ['bold', 'italic', 'strike'].filter((m) => editor.schema.marks[m]).forEach((m) => chain.unsetMark(m));
-  chain.unsetColor().removeEmptyTextStyle().run();
+  chain.unsetColor().removeEmptyTextStyle().command(uncolourLinks).run();
 }
 
-function setBlock(editor: Editor, level: number) {
-  const chain = editor.chain().focus();
-  if (level === -1) {
-    if (!editor.isActive('blockquote')) chain.setParagraph().wrapIn('blockquote', { style: QUOTE_STYLE });
-  } else {
-    if (editor.isActive('blockquote')) chain.lift('blockquote');
-    if (level === 0) chain.setParagraph();
-    else chain.setHeading({ level: level as 1 | 2 | 3 });
-  }
-  chain.run();
-}
-
-export default function RichBar({ editor, tools }: { editor: Editor | null; tools: Tool[] }) {
+// block is the block's own style: its colour and weight.
+export default function RichBar({ editor, tools, block }: { editor: Editor | null; tools: Tool[]; block?: { color?: string | null; fontWeight?: string | null } }) {
   const doc = useDocument();
   const [colourAt, setColourAt] = useState<HTMLElement | null>(null);
   const [nameAt, setNameAt] = useState<HTMLElement | null>(null);
-  const [blockAt, setBlockAt] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const el = editor?.view.dom;
@@ -119,15 +103,19 @@ export default function RichBar({ editor, tools }: { editor: Editor | null; tool
       link: ed?.isActive('link') ?? false,
       bullets: ed?.isActive('bulletList') ?? false,
       numbers: ed?.isActive('orderedList') ?? false,
-      colour: (ed?.getAttributes('textStyle').color as string | undefined) ?? '',
-      block: ed?.isActive('blockquote') ? -1 : ([1, 2, 3].find((l) => ed?.isActive('heading', { level: l })) ?? 0),
+      colour: toHex((ed?.getAttributes('textStyle').color as string | undefined) ?? ''),
+      quote: ed?.isActive('blockquote') ?? false,
     }),
   });
   if (!editor) return null;
 
   const run = (f: (c: ReturnType<Editor['chain']>) => ReturnType<Editor['chain']>) => () => f(editor.chain().focus()).run();
-  const buttons: Record<Exclude<Tool, 'block'>, { label: string; icon: JSX.Element; onClick: (ev: React.MouseEvent<HTMLElement>) => void; pressed?: boolean }> = {
-    bold: { label: `Bold (${KEY}B)`, icon: <FormatBold fontSize="small" />, onClick: run((c) => c.toggleBold()), pressed: active?.bold },
+  const boldBlock = block?.fontWeight === 'bold';
+  const buttons: Record<Tool, { label: string; icon: JSX.Element; onClick: (ev: React.MouseEvent<HTMLElement>) => void; pressed?: boolean; disabled?: boolean }> = {
+    quote: { label: 'Quote', icon: <FormatQuote fontSize="small" />, onClick: run((c) => (editor.isActive('blockquote') ? c.lift('blockquote') : c.wrapIn('blockquote', { style: QUOTE_STYLE }))), pressed: active?.quote },
+    bold: boldBlock
+      ? { label: 'The whole block is bold (Font weight in the panel)', icon: <FormatBold fontSize="small" />, onClick: () => {}, pressed: true, disabled: true }
+      : { label: `Bold (${KEY}B)`, icon: <FormatBold fontSize="small" />, onClick: run((c) => c.toggleBold()), pressed: active?.bold },
     italic: { label: `Italic (${KEY}I)`, icon: <FormatItalic fontSize="small" />, onClick: run((c) => c.toggleItalic()), pressed: active?.italic },
     strike: { label: `Strikethrough (${KEY}${MAC ? '⇧' : 'Shift+'}S)`, icon: <FormatStrikethrough fontSize="small" />, onClick: run((c) => c.toggleStrike()), pressed: active?.strike },
     link: { label: `Link (${KEY}K)`, icon: <InsertLink fontSize="small" />, onClick: () => setLink(editor), pressed: active?.link },
@@ -146,8 +134,9 @@ export default function RichBar({ editor, tools }: { editor: Editor | null; tool
     name: { label: 'Insert their name', icon: <PersonOutline fontSize="small" />, onClick: (ev) => setNameAt(ev.currentTarget) },
     clear: { label: 'Clear formatting', icon: <FormatClear fontSize="small" />, onClick: () => clearFormat(editor) },
   };
-  const colours = emailColours(doc);
-  const block = BLOCKS.find((b) => b.level === active?.block) ?? BLOCKS[0];
+  const blockColour = toHex(block?.color ?? doc.root?.data?.textColor ?? '');
+  const found = emailColours(doc);
+  const colours = !blockColour || found.includes(blockColour) ? found : [blockColour, ...found].slice(0, 8);
 
   return (
     <Paper
@@ -159,43 +148,24 @@ export default function RichBar({ editor, tools }: { editor: Editor | null; tool
       onMouseDown={(ev) => ev.preventDefault()}
     >
       {tools.map((t) => {
-        if (t === 'block') {
-          return (
-            <Button
-              key={t}
-              size="small"
-              color="inherit"
-              aria-label="Paragraph, heading or quote"
-              aria-haspopup="menu"
-              sx={{ textTransform: 'none', minWidth: 104, justifyContent: 'space-between' }}
-              onClick={(ev) => setBlockAt(ev.currentTarget)}
-            >
-              {block.name} ▾
-            </Button>
-          );
-        }
         const b = buttons[t];
         return (
           <Tooltip key={t} title={b.label}>
-            <IconButton
-              size="small"
-              aria-label={b.label}
-              aria-pressed={b.pressed === undefined ? undefined : b.pressed}
-              color={b.pressed ? 'primary' : 'default'}
-              onClick={b.onClick}
-            >
-              {b.icon}
-            </IconButton>
+            <span>
+              <IconButton
+                size="small"
+                aria-label={b.label}
+                aria-pressed={b.pressed === undefined ? undefined : b.pressed}
+                color={b.pressed ? 'primary' : 'default'}
+                disabled={b.disabled}
+                onClick={b.onClick}
+              >
+                {b.icon}
+              </IconButton>
+            </span>
           </Tooltip>
         );
       })}
-      <Menu anchorEl={blockAt} open={!!blockAt} onClose={() => setBlockAt(null)} disableAutoFocusItem disableRestoreFocus>
-        {BLOCKS.map((b) => (
-          <MenuItem key={b.name} selected={b.level === block.level} onClick={() => { setBlockAt(null); setBlock(editor, b.level); }}>
-            {b.name}
-          </MenuItem>
-        ))}
-      </Menu>
       <Menu anchorEl={nameAt} open={!!nameAt} onClose={() => setNameAt(null)} disableAutoFocusItem disableRestoreFocus>
         {NAMES.map((n) => (
           <MenuItem key={n.name} onClick={() => { setNameAt(null); editor.chain().focus().insertContent(n.tag).run(); }}>
@@ -212,17 +182,17 @@ export default function RichBar({ editor, tools }: { editor: Editor | null; tool
         disableRestoreFocus
       >
         <Box className="denma-rich-colours" sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px', p: 1, maxWidth: 200 }}>
-          <Button size="small" color="inherit" sx={{ textTransform: 'none', width: '100%' }} onClick={() => { setColourAt(null); editor.chain().focus().unsetColor().removeEmptyTextStyle().run(); }}>
+          <Button size="small" color="inherit" sx={{ textTransform: 'none', width: '100%' }} onClick={() => { setColourAt(null); uncolour(editor); }}>
             The block's colour
           </Button>
           {colours.map((c) => (
-            <Tooltip key={c} title={c}>
+            <Tooltip key={c} title={c === blockColour ? `${c}, the block's colour` : c}>
               <button
                 type="button"
                 aria-label={c}
-                aria-pressed={active?.colour.toLowerCase() === c}
+                aria-pressed={(active?.colour || blockColour) === c}
                 style={{ width: 24, height: 24, borderRadius: 4, border: '1px solid rgba(0,0,0,0.2)', background: c, cursor: 'pointer' }}
-                onClick={() => { setColourAt(null); editor.chain().focus().setColor(c).run(); }}
+                onClick={() => { setColourAt(null); if (c === blockColour) uncolour(editor); else editor.chain().focus().setColor(c).run(); }}
               />
             </Tooltip>
           ))}
