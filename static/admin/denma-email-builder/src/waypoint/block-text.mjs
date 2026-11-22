@@ -136,6 +136,11 @@ function EmailMarkdown(_a) {
   return /* @__PURE__ */ React.createElement("div", __spreadProps(__spreadValues({}, props), { dangerouslySetInnerHTML: { __html: data } }));
 }
 
+// denma: rich text, saved as HTML and kept to the Markdown path's tags and attributes.
+function EmailHtml({ html, style }) {
+  const data = useMemo(() => sanitizer(html), [html]);
+  return /* @__PURE__ */ React.createElement("div", { style, dangerouslySetInnerHTML: { __html: data } });
+}
 // src/index.tsx
 var FONT_FAMILY_SCHEMA = z.enum([
   "MODERN_SANS",
@@ -194,6 +199,7 @@ var TextPropsSchema = z.object({
   }).optional().nullable(),
   props: z.object({
     markdown: z.boolean().optional().nullable(),
+    format: z.enum(["html"]).optional().nullable(),
     text: z.string().optional().nullable()
   }).optional().nullable()
 });
@@ -212,12 +218,18 @@ function Text({ style, props }) {
     padding: getPadding(style == null ? void 0 : style.padding)
   };
   const text = (_f = props == null ? void 0 : props.text) != null ? _f : TextPropsDefaults.text;
+  if ((props == null ? void 0 : props.format) === "html") {
+    return /* @__PURE__ */ React2.createElement(EmailHtml, { style: wStyle, html: text });
+  }
   if (props == null ? void 0 : props.markdown) {
     return /* @__PURE__ */ React2.createElement(EmailMarkdown, { style: wStyle, markdown: text });
   }
   return /* @__PURE__ */ React2.createElement("div", { style: wStyle }, text);
 }
 export {
+  getFontFamily,
+  renderMarkdownString,
+  sanitizer,
   Text,
   TextPropsDefaults,
   TextPropsSchema

@@ -1,6 +1,6 @@
-/* denma: the visual e-mail builder's Markdown help and bar, and phones (assets/js/denma-visual-editor.js). */
+/* denma: the visual e-mail builder's Markdown bar and rich text (denma-email-builder/src/documents/blocks/Text), and phones (assets/js/denma-visual-editor.js). */
 
-/* The ? by the Text block's Markdown switch. */
+/* The ? at the end of the Markdown bar. */
 .denma-md-help {
   display: inline-flex;
   margin-inline-start: 6px;
@@ -83,4 +83,13 @@
   .sidebar .MuiDrawer-paper > .MuiBox-root {
     width: 100% !important;
   }
+}
+
+/* Rich text typed in a Text block: as the e-mail shows it. */
+.denma-rich-text:focus {
+  outline: none;
+}
+
+.denma-rich-text li > p {
+  margin: 0;
 }
