@@ -85,6 +85,7 @@ type campaignView struct {
 
 	DenmaPlainAuto bool               // denma: the center makes plain text automatically (cmd/denma_features.go)
 	DenmaReplyTo   string             // denma: the center's default reply-to (cmd/denma_reply_to.go)
+	DenmaFrom      denmaFromView      // denma: the center's e-mail as the From (cmd/denma_center_from.go)
 	DenmaAttachMB  int                // denma: the center's limit on attachments (cmd/denma_attachlimit.go)
 	DenmaAttachTab bool               // denma: the Attachments tab is shown (cmd/denma_attachlimit.go)
 	DenmaFailures  *denmaSendFailures // denma: those it couldn't send to (cmd/denma_retries.go)
@@ -118,6 +119,7 @@ func (a *App) ViewNewCampaign(c echo.Context) error {
 		AllLists:        allLists,
 		SelectedListIDs: selIDs,
 		DenmaReplyTo:    a.denmaReplyTo(),      // denma
+		DenmaFrom:       a.denmaCenterFrom(),   // denma
 		DenmaAttachMB:   a.denmaAttachMB(),     // denma
 		DenmaAttachTab:  a.denmaAttachTab(nil), // denma
 	}
@@ -195,6 +197,7 @@ func (a *App) ViewCampaign(c echo.Context) error {
 
 		DenmaPlainAuto: a.denmaPlainAuto(),                   // denma
 		DenmaReplyTo:   a.denmaReplyTo(),                     // denma
+		DenmaFrom:      a.denmaCenterFrom(),                  // denma
 		DenmaAttachMB:  a.denmaAttachMB(),                    // denma
 		DenmaAttachTab: a.denmaAttachTab(&camp),              // denma
 		DenmaFailures:  a.denmaCampaignFailuresView(camp.ID), // denma

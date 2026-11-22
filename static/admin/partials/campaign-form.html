@@ -27,8 +27,14 @@
 
 		<label data-field>
 			{{ $root.L.T "campaigns.fromAddress" }}
-			<input name="from_email" maxlength="200" x-model="form.from_email" :disabled="!canEdit" placeholder="{{ $root.L.T "campaigns.fromAddressPlaceholder" }}" />{{/* denma */}}
+			<input name="from_email" maxlength="200" x-model="form.from_email" :disabled="!canEdit || denmaFromCenter" placeholder="{{ $root.L.T "campaigns.fromAddressPlaceholder" }}" />{{/* denma */}}
 		</label>
+		{{- with $root.Data.DenmaFrom }}{{ if .Email }}{{/* denma: cmd/denma_center_from.go */}}
+		<label data-field>
+			<input type="checkbox" role="switch" x-init="denmaCenterFromInit()" :checked="denmaFromCenter" @change="onDenmaFromCenter($event.target.checked)" :disabled="!canEdit{{ if not .Usable }} || !denmaFromCenter{{ end }}" data-testid="campaign-from-center" /> Send from the center's e-mail
+			<small data-hint>{{ if .Usable }}{{ .Email }} (Config -> General).{{ else }}The center can't send as {{ .Email }} until a superadmin allows it on the hub's Sending domains page.{{ end }}</small>
+		</label>
+		{{- end }}{{ end }}
 
 		<label data-field>{{/* denma: cmd/denma_reply_to.go */}}
 			Reply-to
