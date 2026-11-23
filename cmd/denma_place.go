@@ -69,7 +69,7 @@ func denmaHubOnlyPath(p string) bool {
 	}
 	for _, pre := range []string{
 		"/admin/hub", "/admin/centers", "/admin/people", "/admin/domains", "/admin/system", "/admin/mcp", "/admin/webhooks",
-		"/api/denma/centers", "/api/denma/people", "/api/denma/domains", "/api/denma/hub", "/api/denma/mcp",
+		"/api/denma/centers", "/api/denma/people", "/api/denma/domains", "/api/denma/gmail", "/api/denma/hub", "/api/denma/mcp",
 	} {
 		if p == pre || strings.HasPrefix(p, pre+"/") {
 			return true
