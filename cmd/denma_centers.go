@@ -735,6 +735,18 @@ func denmaRecoverInstall(err *error) {
 	}
 }
 
+// denmaCheckSearchPath returns an error unless db resolves names in schema alone.
+func denmaCheckSearchPath(db *sqlx.DB, schema string) error {
+	var schemas []string
+	if err := db.Select(&schemas, `SELECT unnest(current_schemas(false))`); err != nil {
+		return fmt.Errorf("reading the search path: %v", err)
+	}
+	if len(schemas) != 1 || schemas[0] != schema {
+		return fmt.Errorf("the search path is %v, not just %s", schemas, schema)
+	}
+	return nil
+}
+
 // provision installs the center's schema if new and points its URLs and uploads at /c/<slug>/.
 func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 	var installed bool
@@ -742,6 +754,9 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 		return err
 	}
 	if installed {
+		if err := denmaCheckSearchPath(db, c.Schema); err != nil {
+			return fmt.Errorf("refusing to load: %v", err)
+		}
 		// Provisioned centers have denma.provisioned or features; with neither, it stopped part-way.
 		var done bool
 		if err := db.Get(&done, `SELECT EXISTS (SELECT 1 FROM settings WHERE key IN ('denma.provisioned', 'denma.features_version'))`); err != nil {
@@ -769,13 +784,8 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 		return fmt.Errorf("creating schema: %v", err)
 	}
 
-	// Never install unless every connection resolves names in this schema alone.
-	var schemas []string
-	if err := db.Select(&schemas, `SELECT unnest(current_schemas(false))`); err != nil {
-		return err
-	}
-	if len(schemas) != 1 || schemas[0] != c.Schema {
-		return fmt.Errorf("refusing to install: search path is %v, not just %s", schemas, c.Schema)
+	if err := denmaCheckSearchPath(db, c.Schema); err != nil {
+		return fmt.Errorf("refusing to install: %v", err)
 	}
 
 	if err := denmaCryptoFuncs(db); err != nil {
@@ -912,17 +922,15 @@ func denmaPrepareHub(db *sqlx.DB) {
 		lo.Fatalf("denma: error creating the hub's schema %s: %v", schema, err)
 	}
 
+	if err := denmaCheckSearchPath(db, schema); err != nil {
+		lo.Fatalf("denma: refusing to start the hub: %v", err)
+	}
 	var installed bool
 	if err := db.Get(&installed, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'settings')`, schema); err != nil {
 		lo.Fatalf("denma: error checking the hub's schema: %v", err)
 	}
 	if installed {
 		return
-	}
-
-	var schemas []string
-	if err := db.Select(&schemas, `SELECT unnest(current_schemas(false))`); err != nil || len(schemas) != 1 || schemas[0] != schema {
-		lo.Fatalf("denma: refusing to install the hub: the search path is %v, not just %s (%v)", schemas, schema, err)
 	}
 	if err := denmaCryptoFuncs(db); err != nil {
 		lo.Fatalf("denma: %v", err)
