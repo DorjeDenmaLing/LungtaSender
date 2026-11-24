@@ -33,7 +33,7 @@ require (
 	github.com/knadh/paginator/v2 v2.0.3
 	github.com/knadh/smtppool/v2 v2.1.2
 	github.com/knadh/stuffbin v1.3.0
-	github.com/labstack/echo/v4 v4.16.0
+	github.com/labstack/echo/v4 v4.16.6
 	github.com/lib/pq v1.12.3
 	github.com/paulbellamy/ratecounter v0.2.0
 	github.com/pquerna/otp v1.5.0
