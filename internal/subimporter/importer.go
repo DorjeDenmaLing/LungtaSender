@@ -630,7 +630,7 @@ func (im *Importer) Stop() {
 // are enforced on top of the bare-address validation in utils.SanitizeEmail.
 func (im *Importer) SanitizeEmail(email string) (string, error) {
 	addr, err := utils.SanitizeEmail(email)
-	if err != nil {
+	if err != nil || denmaUndeliverable(addr) { // denma: denma.go
 		return "", errors.New(im.i18n.T("subscribers.invalidEmail"))
 	}
 

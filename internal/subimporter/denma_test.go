@@ -109,3 +109,17 @@ func TestDenmaCopyCSV(t *testing.T) {
 type zeros struct{}
 
 func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+
+// Addresses on .invalid, such as the MCP's stand-ins, are refused by every path that adds or changes one.
+func TestDenmaRefusesInvalidDomain(t *testing.T) {
+	for addr, ok := range map[string]bool{
+		"user_594b0c1d2e3f@redacted.invalid": false,
+		"Someone@Hub.INVALID":                false,
+		"a@invalid.example.org":              true,
+		"a@example.org":                      true,
+	} {
+		if got := !denmaUndeliverable(strings.ToLower(addr)); got != ok {
+			t.Errorf("%s: allowed %v, want %v", addr, got, ok)
+		}
+	}
+}

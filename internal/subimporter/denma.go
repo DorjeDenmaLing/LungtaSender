@@ -17,6 +17,11 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
+// denmaUndeliverable reports whether addr is on a domain that can never exist (.invalid, RFC 2606).
+func denmaUndeliverable(addr string) bool {
+	return strings.HasSuffix(strings.TrimSuffix(addr, "."), ".invalid")
+}
+
 // The CSV's first_name and last_name columns too (cmd/denma_names.go).
 func init() {
 	csvHeaders["first_name"] = true
