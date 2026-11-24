@@ -928,11 +928,11 @@ func denmaPrepareHub(db *sqlx.DB) {
 		lo.Fatalf("denma: %v", err)
 	}
 
-	lo.Printf("denma: installing the hub (Listmonk Shambhala) in schema %s", schema)
+	lo.Printf("denma: installing the hub (Lungta Sender) in schema %s", schema)
 	install(migList[len(migList)-1].version, db, fs, false, false)
 
 	if _, err := db.Exec(`DELETE FROM campaigns; DELETE FROM subscribers; DELETE FROM lists;
-		UPDATE settings SET value = '"Listmonk Shambhala"', updated_at = NOW() WHERE key = 'app.site_name';`); err != nil {
+		UPDATE settings SET value = '"Lungta Sender"', updated_at = NOW() WHERE key = 'app.site_name';`); err != nil {
 		lo.Fatalf("denma: error setting up the hub: %v", err)
 	}
 }
