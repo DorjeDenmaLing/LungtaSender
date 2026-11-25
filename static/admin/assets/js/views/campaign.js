@@ -12,6 +12,7 @@ import { denmaPlainText } from '../denma-campaign.js'; // denma: automatic plain
 import { denmaTagAutocomplete } from '../denma-tags-ui.js'; // denma: subscriber tags
 import { denmaFailures } from '../denma-failures.js'; // denma: failed sends
 import { denmaStartConfirm } from '../denma-start.js'; // denma: the start confirmation
+import { denmaTestSend } from '../denma-test-send.js'; // denma: a test to a list
 import { denmaUnsaved } from '../denma-unsaved.js'; // denma: asks before leaving unsaved
 import { denmaEditing, denmaHistory, denmaVersions } from '../denma-versions.js'; // denma: saves over the version it started from; its history; who else is editing
 
@@ -52,6 +53,7 @@ function component(camp, sel) {
     denmaTagAutocomplete, // denma
     ...denmaFailures(), // denma
     ...denmaStartConfirm(), // denma
+    ...denmaTestSend(), // denma
     ...denmaUnsaved({ skip: ['testEmails', 'status', 'uuid'], save() { return this.isNew ? this.onCreate() : (this.canEdit ? this.onSave() : this.onSaveArchive()); } }), // denma
     ...denmaVersions({ kind: 'campaign', version: c.version, id() { return this.form.id; }, base() { const f = this.denmaSavedForm(); return f && this._payload.call({ form: f }); } }), // denma
     ...denmaHistory({ kind: 'campaign', id() { return this.form.id; }, canRestore() { return this.canEdit; } }), // denma
@@ -381,6 +383,7 @@ function component(camp, sel) {
         ...p,
         id: this.form.id,
         subscribers: this.form.testEmails,
+        test_list: this.testList || 0, // denma: cmd/denma_testlist.go
       });
       u.toast(i18n.t('campaigns.testSent'));
     },

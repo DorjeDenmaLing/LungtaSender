@@ -36,7 +36,8 @@ type campReq struct {
 	// This is only relevant to campaign test requests.
 	SubscriberEmails pq.StringArray `json:"subscribers"`
 
-	DenmaVersion int `json:"version"` // denma: the version the save started from (cmd/denma_versions.go)
+	DenmaVersion  int `json:"version"`   // denma: the version the save started from (cmd/denma_versions.go)
+	DenmaTestList int `json:"test_list"` // denma: a list to send the test to (cmd/denma_testlist.go)
 	denmaCheck   int // denma: what it's checked for (cmd/denma_drafts.go)
 }
 
@@ -764,6 +765,9 @@ func (a *App) TestCampaign(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	} else {
 		req = c
+	}
+	if err := a.denmaAddTestList(c, &req); err != nil { // denma: cmd/denma_testlist.go
+		return err
 	}
 	if len(req.SubscriberEmails) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("campaigns.noSubsToTest"))

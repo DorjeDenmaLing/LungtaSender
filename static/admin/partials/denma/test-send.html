@@ -1,0 +1,24 @@
+{{/* denma: a campaign's Send test button and its recipients (cmd/denma_testlist.go). */}}
+{{ define "denma-test-send" -}}
+{{- $root := .Root -}}
+<ot-dropdown>
+	<button type="button" class="outline campaign-test-btn dot-indicator{{ with .BtnClass }} {{ . }}{{ end }}" :class="{ 'is-active': denmaTestChosen() }" popovertarget="{{ .ID }}" :disabled="isNew" {{ if eq .ID "campaign-test" }}data-cy="btn-test" {{ end }}data-testid="{{ .ID }}-btn">{{ Icon "mail" }} {{ $root.L.T "campaigns.sendTest" }}</button>
+	<div popover id="{{ .ID }}" class="campaign-test{{ with .PopClass }} {{ . }}{{ end }}">
+		<label data-field>
+			<ot-taginput x-model="form.testEmails"><input type="email" placeholder="{{ $root.L.T "campaigns.testEmails" }}" :disabled="isNew" @blur="$el.value !== '' && $el.closest('ot-taginput').add($el.value)" autofocus /></ot-taginput>
+			<small data-hint>{{ $root.L.T "campaigns.sendTestHelp" }}</small>
+		</label>
+		<label data-field>
+			List
+			<select x-model.number="testList" :disabled="isNew" data-testid="{{ .ID }}-list">
+				<option value="0">No list</option>
+				<template x-for="l in denmaTestLists()" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+			</select>
+			<small data-hint>Also send to its subscribed people: a list you manage, of at most 25.</small>
+		</label>
+		<div class="hstack justify-end">
+			<button type="button" data-variant="primary" @click="onTest" :disabled="isNew || isLoading('campaigns.test')" :aria-busy="isLoading('campaigns.test')" data-spinner="small">{{ Icon "mail" }} {{ $root.L.T "campaigns.send" }}</button>
+		</div>
+	</div>
+</ot-dropdown>
+{{- end }}

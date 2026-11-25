@@ -43,6 +43,8 @@
   "campaigns.noSubs": "There are no contacts in the selected lists to create the campaign.",
   "campaigns.noSubsToTest": "There are no contacts to target.",
   "campaigns.noKnownSubsToTest": "No known contacts to test.",
+  "campaigns.sendTest": "Send test email",
+  "campaigns.testSent": "Test email sent",
   "campaigns.sendTestHelp": "Hit Enter after typing an address to add multiple recipients. The addresses must belong to existing contacts.",
   "lists.confirmDelete": "Are you sure? This does not delete contacts.",
   "settings.bounces.countHelp": "Number of bounces per contact",

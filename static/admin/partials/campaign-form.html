@@ -109,13 +109,14 @@
 					<strong>{{ $root.L.T "globals.fields.uuid" }}</strong> <span x-text="form.uuid"></span>
 				</button>
 			</div>
-			{{- if $canSend }}
-				<div class="hstack justify-end gap-1">
+			<div class="hstack justify-end gap-1">{{/* denma: Send test beside Start (cmd/denma_testlist.go) */}}
+				{{- if $canManage }}{{ template "denma-test-send" dict "Root" $root "ID" "campaign-test-main" "BtnClass" "denma-test-main-btn" "PopClass" "denma-test-main" }}{{ end }}
+				{{- if $canSend }}
 					<template x-if="canStart">
 						<button type="button" data-variant="primary" data-cy="btn-start" @click="onStart">{{ Icon "send" }} {{ $root.L.T "campaigns.start" }}</button>
 					</template>
-				</div>
-			{{- end }}
+				{{- end }}
+			</div>
 		</footer>
 	{{- end }}
 </div>
