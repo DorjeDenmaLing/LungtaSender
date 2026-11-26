@@ -930,10 +930,11 @@ func (a *App) DenmaSwitchCenter(c echo.Context) error {
 	}
 	for _, m := range ms {
 		if m.Slug == c.Param("slug") {
-			if _, err := denmaHub.enter(c, m); err != nil {
+			ctr, err := denmaHub.enter(c, m)
+			if err != nil {
 				return err
 			}
-			return c.Redirect(http.StatusFound, uriAdmin) // now that center's (cmd/denma_place.go)
+			return c.Redirect(http.StatusFound, denmaCenterAdmin(ctr)) // cmd/denma_place.go
 		}
 	}
 	return echo.NewHTTPError(http.StatusNotFound, "You're not a user of that center, or your account there is disabled.")
@@ -952,7 +953,7 @@ func (d *denmaCenters) enter(c echo.Context, m denmaMembership) (*denmaCenter, e
 	if user.Status != auth.UserStatusEnabled {
 		return nil, echo.NewHTTPError(http.StatusForbidden, "Your account in that center is disabled.")
 	}
-	// The center's session cookie, and the admin at /admin shows it (cmd/denma_place.go).
+	// The center's session cookie, and /admin goes back to it (cmd/denma_place.go).
 	if err := ctr.app.auth.SaveSession(user, "", c); err != nil {
 		return nil, err
 	}

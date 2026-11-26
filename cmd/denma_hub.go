@@ -313,12 +313,12 @@ func (a *App) DenmaOpenCenter(c echo.Context) error {
 		return denmaInternal(err)
 	}
 
-	// The center's session cookie, and the admin at /admin shows it (cmd/denma_place.go).
+	// The center's session cookie, and /admin goes back to it (cmd/denma_place.go).
 	if err := ctr.app.auth.SaveSession(auth.User{Base: auth.Base{ID: userID}}, "", c); err != nil {
 		return err
 	}
 	denmaSetPlace(c, ctr.Slug)
-	return c.Redirect(http.StatusFound, uriAdmin)
+	return c.Redirect(http.StatusFound, denmaCenterAdmin(ctr))
 }
 
 // superadminIn returns the superadmin's own account in a center, creating or repairing it.

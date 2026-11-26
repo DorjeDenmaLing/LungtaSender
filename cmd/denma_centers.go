@@ -239,23 +239,26 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				if p == "/" {
 					return c.Redirect(http.StatusFound, uriAdmin)
 				}
-				// /admin (and /api) is the center the place cookie names, or the hub (cmd/denma_place.go).
+				// /admin (and /api) is the hub, or the center the place cookie names (cmd/denma_place.go).
 				if denmaAdminRequest(p) {
-					if err := denmaCheckTab(c, p); err != nil {
-						return err
+					slug, to := d.placeCenter(c, p)
+					if to != "" {
+						return c.Redirect(http.StatusFound, to)
 					}
-					if ctr := d.placeCenter(c, p); ctr != nil {
-						denmaSandbox(ctr.app, c.Response().Header(), p)
-						ctr.router.ServeHTTP(c.Response(), c.Request())
-						return nil
-					}
-					if slug := denmaPlace(c); slug != "" {
-						switch {
-						case !denmaHubOnlyPath(p) && d.isStarting(slug):
-							return denmaStartingPage(c)
-						case d.get(slug) == nil || (c.Request().Method == http.MethodGet && strings.HasPrefix(p, uriAdmin)):
-							denmaSetPlace(c, "") // gone, or a hub page: the hub from now on
+					if slug != "" {
+						if ctr := d.get(slug); ctr != nil {
+							denmaSandbox(ctr.app, c.Response().Header(), p)
+							ctr.router.ServeHTTP(c.Response(), c.Request())
+							return nil
 						}
+						if d.isStarting(slug) {
+							return denmaStartingPage(c)
+						}
+						return echo.NewHTTPError(http.StatusNotFound, "center not found")
+					}
+					if pl := denmaPlace(c); pl != "" && ((d.get(pl) == nil && !d.isStarting(pl)) ||
+						(c.Request().Method == http.MethodGet && strings.HasPrefix(p, uriAdmin))) {
+						denmaSetPlace(c, "") // gone, or a hub page: the hub from now on
 					}
 				}
 				switch {
@@ -277,18 +280,6 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 			if ctr == nil {
 				return echo.NewHTTPError(http.StatusNotFound, "center not found")
 			}
-			// An old admin address (e-mails, bookmarks) goes to the center at /admin (cmd/denma_place.go).
-			if c.Request().Method == http.MethodGet && (rest == "admin" || strings.HasPrefix(rest, "admin/")) {
-				denmaSetPlace(c, slug)
-				to := path.Clean("/" + rest) // and still under /admin: no "admin/../api/..."
-				if to != "/admin" && !strings.HasPrefix(to, "/admin/") {
-					to = "/admin"
-				}
-				if q := c.Request().URL.RawQuery; q != "" {
-					to += "?" + q
-				}
-				return c.Redirect(http.StatusFound, to)
-			}
 			// Bounce webhooks are the hub's, recorded in their center (cmd/denma_bounces.go).
 			if strings.HasPrefix(rest, "webhooks/service/") {
 				r := c.Request().Clone(c.Request().Context())
@@ -297,12 +288,27 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 				c.Echo().ServeHTTP(c.Response(), r) // as a request to the hub
 				return nil
 			}
-			// Settings are the hub's: its pages, and none of the APIs here.
-			if denmaCenterSettingsPath("/" + rest) {
-				if strings.HasPrefix(rest, "admin/") {
-					return c.Redirect(http.StatusFound, path.Join(d.current().urlCfg.RootPath, "/"+rest))
+			// No dot segments: the path routed is the one sandboxed (cmd/denma_csp.go).
+			if s := "/" + rest + "/"; strings.Contains(s, "/../") || strings.Contains(s, "/./") {
+				return echo.NewHTTPError(http.StatusNotFound, "not found")
+			}
+			get := c.Request().Method == http.MethodGet || c.Request().Method == http.MethodHead
+			hp := path.Clean("/" + rest)
+			adminPage := hp == uriAdmin || strings.HasPrefix(hp, uriAdmin+"/")
+			// The hub's pages are at its own address (cmd/denma_place.go).
+			if denmaHubOnlyPath(hp) && get && adminPage {
+				if q := c.Request().URL.RawQuery; q != "" {
+					hp += "?" + q
 				}
+				return c.Redirect(http.StatusFound, hp)
+			}
+			// Settings are the hub's, and none of their APIs answer here.
+			if denmaCenterSettingsPath(hp) {
 				return echo.NewHTTPError(http.StatusForbidden, "Settings are managed in the hub, for all centers.")
+			}
+			// /admin goes back to the center last opened (cmd/denma_place.go).
+			if get && adminPage && !strings.HasPrefix(hp, uriAdmin+"/static/") && denmaPlace(c) != slug {
+				denmaSetPlace(c, slug)
 			}
 			denmaSandbox(ctr.app, c.Response().Header(), "/"+rest)
 			r := c.Request().Clone(c.Request().Context())
@@ -1261,7 +1267,7 @@ func (a *App) tmpKey(k string) string {
 	return a.urlCfg.RootURL + " " + k
 }
 
-// denmaPrefixWriter puts the center's /c/<slug> prefix on redirects to root-relative paths.
+// denmaPrefixWriter puts the center's /c/<slug> prefix on redirects to its own root-relative paths.
 type denmaPrefixWriter struct {
 	http.ResponseWriter
 	prefix string
@@ -1274,8 +1280,8 @@ func (w *denmaPrefixWriter) fix() {
 	}
 	w.done = true
 	loc := w.Header().Get("Location")
-	if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, "//") &&
-		loc != w.prefix && !strings.HasPrefix(loc, w.prefix+"/") {
+	if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, "//") && !strings.HasPrefix(loc, denmaCenterPath) &&
+		loc != denmaLoginPath && !strings.HasPrefix(loc, denmaLoginPath+"/") && !strings.HasPrefix(loc, denmaLoginPath+"?") {
 		w.Header().Set("Location", w.prefix+loc)
 	}
 }

@@ -1,9 +1,10 @@
 package main
 
-// denma: one admin address (/admin, /api) for every center, chosen by the place cookie.
+// denma: each center's admin at /c/<slug>/admin; /admin and /api are the hub's, or the place cookie's center.
 
 import (
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -11,15 +12,23 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// denmaPlaceCookie holds the center the admin shows ("" or absent: the hub).
+// denmaPlaceCookie holds the center last opened ("" or absent: the hub).
 const denmaPlaceCookie = "denma_center"
 
-// denmaAdminPath is an App's admin root path: "/" in multi-center mode, else the root URL's path.
-func denmaAdminPath(ko *koanf.Koanf, rootPath string) string {
+// denmaHubSessionCookie is the hub's session cookie.
+const denmaHubSessionCookie = "session"
+
+// denmaCookiePath is the session cookies' path: "/" in multi-center mode, else the root URL's path.
+func denmaCookiePath(ko *koanf.Koanf, rootPath string) string {
 	if ko.Bool("denma.multi_center") || ko.String("denma.center") != "" {
 		return "/"
 	}
 	return rootPath
+}
+
+// denmaCenterAdmin is a center's admin address, /c/<slug>/admin.
+func denmaCenterAdmin(ctr *denmaCenter) string {
+	return path.Join(ctr.app.urlCfg.RootPath, uriAdmin)
 }
 
 // denmaCookieName is a session cookie's name in an App: a center's has its slug.
@@ -78,31 +87,58 @@ func denmaHubOnlyPath(p string) bool {
 	return false
 }
 
-// placeCenter is the center that serves an admin request at /admin or /api, or nil for the hub.
-func (d *denmaCenters) placeCenter(c echo.Context, p string) *denmaCenter {
+// placeCenter is the center a request at /admin or /api is for ("": the hub), or the center's own address for a page load.
+func (d *denmaCenters) placeCenter(c echo.Context, p string) (string, string) {
 	if !denmaAdminRequest(p) || denmaHubOnlyPath(p) {
-		return nil
+		return "", ""
 	}
-	slug := denmaPlace(c)
+	_, err := c.Cookie(denmaHubSessionCookie)
+	hub := err == nil
+	// The hub's pages' own script and styles (hub settings).
+	if hub && (p == uriAdmin+"/custom.css" || p == uriAdmin+"/custom.js") {
+		return "", ""
+	}
+	slug, named := denmaTabCenter(c, p)
 	if slug == "" {
-		return nil
+		return "", ""
 	}
-	return d.get(slug)
+	// The place's center gone: the hub. A page's own center gone: not found (cmd/denma_centers.go).
+	if d.get(slug) == nil && !d.isStarting(slug) && !named {
+		return "", ""
+	}
+	if !denmaPageLoad(c, p) {
+		return slug, ""
+	}
+	// A superadmin's hub pages stay the hub's.
+	if hub && denmaHubPath(p) {
+		return "", ""
+	}
+	to := denmaCenterPath + slug + p
+	if q := c.Request().URL.RawQuery; q != "" {
+		to += "?" + q
+	}
+	return "", to
+}
+
+// denmaPageLoad reports whether a request is a browser's load of an admin page.
+func denmaPageLoad(c echo.Context, p string) bool {
+	req := c.Request()
+	return (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
+		req.Header.Get("Sec-Fetch-Mode") == "navigate" &&
+		(p == uriAdmin || strings.HasPrefix(p, uriAdmin+"/")) && !strings.HasPrefix(p, uriAdmin+"/static/")
 }
 
 // denmaTabHeader is the center ("" for the hub) the admin page was loaded for (denma-place.js).
 const denmaTabHeader = "X-Denma-Center"
 
-// denmaCheckTab refuses an admin API request from a page loaded for another center than the place's.
-func denmaCheckTab(c echo.Context, p string) error {
-	if (p != "/api" && !strings.HasPrefix(p, "/api/")) || denmaHubOnlyPath(p) {
-		return nil
+// denmaTabCenter is the center of an API request's page if it says (named), else the place cookie's.
+func denmaTabCenter(c echo.Context, p string) (string, bool) {
+	if p == "/api" || strings.HasPrefix(p, "/api/") {
+		if h, ok := c.Request().Header[denmaTabHeader]; ok && len(h) > 0 {
+			return h[0], h[0] != ""
+		}
 	}
-	h, ok := c.Request().Header[denmaTabHeader]
-	if !ok || len(h) == 0 || h[0] == denmaPlace(c) {
-		return nil
-	}
-	return echo.NewHTTPError(http.StatusConflict, "Another center was opened in another tab or window since this page was loaded. Reload the page to work there.")
+	return denmaPlace(c), false
 }
 
 // DenmaToHub is the top bar's way back to the hub, for superadmins in a center.

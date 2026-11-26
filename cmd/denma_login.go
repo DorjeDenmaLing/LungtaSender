@@ -271,7 +271,7 @@ func (a *App) denmaSignedIn(c echo.Context, personID int, next string) error {
 	if rest != uriAdmin && !strings.HasPrefix(rest, uriAdmin+"/") {
 		rest = uriAdmin
 	}
-	return c.Redirect(http.StatusFound, rest)
+	return c.Redirect(http.StatusFound, strings.TrimSuffix(ctr.app.urlCfg.RootPath, "/")+rest)
 }
 
 // denmaLoginPage is the data of the sign-in pages here.
@@ -340,10 +340,11 @@ func (a *App) DenmaLoginCenters(c echo.Context) error {
 		for _, m := range ms {
 			if m.Slug == slug {
 				a.clearLoginState(c)
-				if _, err := denmaHub.enter(c, m); err != nil {
+				ctr, err := denmaHub.enter(c, m)
+				if err != nil {
 					return a.renderLoginPage(c, err)
 				}
-				return c.Redirect(http.StatusFound, uriAdmin) // now that center's (cmd/denma_place.go)
+				return c.Redirect(http.StatusFound, denmaCenterAdmin(ctr)) // cmd/denma_place.go
 			}
 		}
 	}

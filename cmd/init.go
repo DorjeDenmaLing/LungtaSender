@@ -72,7 +72,7 @@ const (
 type UrlConfig struct {
 	RootURL      string `koanf:"root_url"`
 	RootPath     string
-	AdminPath    string // denma: the admin's root path, "/" for every center (cmd/denma_place.go)
+	AdminPath    string // denma: the admin's root path, a center's /c/<slug>/ (cmd/denma_place.go)
 	LogoURL      string `koanf:"logo_url"`
 	FaviconURL   string `koanf:"favicon_url"`
 	LoginURL     string `koanf:"login_url"`
@@ -492,10 +492,10 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 	return &UrlConfig{
 		RootURL:    root,
 		RootPath:   rootPath,
-		AdminPath:  denmaAdminPath(ko, rootPath), // denma
+		AdminPath:  rootPath, // denma: a center's admin is under its root (cmd/denma_place.go)
 		LogoURL:    ko.String("app.logo_url"),
 		FaviconURL: ko.String("app.favicon_url"),
-		LoginURL:   path.Join(denmaAdminPath(ko, rootPath), uriAdmin, "/login"), // denma: root path aware
+		LoginURL:   path.Join(rootPath, uriAdmin, "/login"), // denma: root path aware
 
 		// Static URLS.
 		// url.com/subscription/{campaign_uuid}/{subscriber_uuid}
@@ -1416,7 +1416,7 @@ func initAuth(co *core.Core, db *sql.DB, ko *koanf.Koanf) (bool, *auth.Auth) {
 		SetCookie: func(cookie *http.Cookie, w any) error {
 			c := w.(echo.Context)
 			cookie.SameSite = http.SameSiteLaxMode
-			cookie.Path = initUrlConfig(ko).AdminPath // denma: each center's own name, at the admin's path (cmd/denma_place.go)
+			cookie.Path = denmaCookiePath(ko, initUrlConfig(ko).RootPath) // denma: each center's own name, at / (cmd/denma_place.go)
 			cookie.Name = denmaCookieName(ko, cookie.Name)
 			cookie.Secure = c.Scheme() == "https" // denma: behind HTTPS too (X-Forwarded-Proto), as the place cookie
 			c.SetCookie(cookie)
