@@ -29,3 +29,18 @@ func TestDenmaPrefixWriter(t *testing.T) {
 		}
 	}
 }
+
+// TestDenmaNoStorePath: the admin, its API and sign-in are kept by no cache;
+// their static files and the public pages may be.
+func TestDenmaNoStorePath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/admin": true, "/admin/lists": true, "/api/lists": true, "/api/subscribers/export": true,
+		"/login": true, "/login/centers": true,
+		"/admin/static/style.css": false, "/admin/custom.css": false, "/admin/custom.js": false,
+		"/subscription/form": false, "/public/static/style.css": false, "/loginx": false, "/apix": false,
+	} {
+		if got := denmaNoStorePath(p); got != want {
+			t.Errorf("%s: got %v, want %v", p, got, want)
+		}
+	}
+}

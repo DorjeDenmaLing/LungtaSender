@@ -31,14 +31,25 @@ func denmaAdminCSP(c echo.Context) string {
 	return nonce
 }
 
-// denmaHeaders gives every answer nosniff and a referrer policy.
+// denmaHeaders gives every answer nosniff and a referrer policy, and the admin's, its API's and sign-in's no-store.
 func denmaHeaders(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		h := c.Response().Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		if denmaNoStorePath(c.Request().URL.Path) {
+			c.Response().Before(func() { h.Set("Cache-Control", "no-store") }) // over a handler's own
+		}
 		return next(c)
 	}
+}
+
+// denmaNoStorePath reports whether a path's answers are kept by no cache: the admin, its API and sign-in, not their static files.
+func denmaNoStorePath(p string) bool {
+	if strings.HasPrefix(p, uriAdmin+"/static/") || p == uriAdmin+"/custom.css" || p == uriAdmin+"/custom.js" {
+		return false
+	}
+	return denmaAdminRequest(p) || p == denmaLoginPath || strings.HasPrefix(p, denmaLoginPath+"/")
 }
 
 // denmaFormBody is whether an admin API change has a body other than JSON or a multipart upload; previews take a form.
