@@ -261,6 +261,9 @@ func initDenmaCenters(srv *echo.Echo, base *App) {
 						denmaSetPlace(c, "") // gone, or a hub page: the hub from now on
 					}
 				}
+				if to := denmaOldCenterPage(c, p); to != "" {
+					return c.Redirect(http.StatusFound, to)
+				}
 				switch {
 				case !denmaHubPath(p) && !denmaHubUpload(d.current(), p): // its own uploads (cmd/denma_hubmedia.go)
 					return echo.NewHTTPError(http.StatusNotFound, "not found")

@@ -4,6 +4,7 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -118,6 +119,18 @@ func (d *denmaCenters) placeCenter(c echo.Context, p string) (string, string) {
 		to += "?" + q
 	}
 	return "", to
+}
+
+// denmaOldCenterPage is where a page load of center content at the hub's address goes, or "": an old
+// link's sign-in, which picks the center and keeps the page; the hub's own sign-in has the centers page.
+func denmaOldCenterPage(c echo.Context, p string) string {
+	if !denmaPageLoad(c, p) || !denmaCenterContent(p) || denmaHubMediaPage(p) {
+		return ""
+	}
+	if _, err := c.Cookie(denmaHubSessionCookie); err == nil {
+		return uriAdmin + "/centers"
+	}
+	return denmaLoginPath + "?next=" + url.QueryEscape(p)
 }
 
 // denmaPageLoad reports whether a request is a browser's load of an admin page.
