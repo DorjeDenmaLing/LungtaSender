@@ -312,13 +312,10 @@ func (d *denmaCenters) mcpRoute(c echo.Context) (bool, error) {
 }
 
 func (d *denmaCenters) mcpServe(c echo.Context, rest string) error {
-	// Failures are counted by the connector secret when it's right, else by address.
+	// Failures are counted by the connector secret when it's right, else by client address (cmd/denma_mcp_client.go).
 	ip := c.RealIP()
 	secret, secretOK := d.mcpConnectorSecret(c, ip)
-	bad := ip
-	if secretOK {
-		bad = "secret:" + secret
-	}
+	bad := d.mcpBadBucket(c, ip, secret, secretOK)
 	if wait := denmaMCPBadKeys.wait(bad); wait > 0 {
 		return denmaTooMany(wait)
 	}
@@ -421,7 +418,7 @@ func (d *denmaCenters) mcpServe(c echo.Context, rest string) error {
 	r.URL.Path = p
 	r.URL.RawPath = ""
 	r.RequestURI = r.URL.RequestURI()
-	for _, h := range []string{echo.HeaderAuthorization, denmaMCPPersonHeader, "Cookie", "Origin", "Referer", denmaTabHeader} {
+	for _, h := range []string{echo.HeaderAuthorization, denmaMCPPersonHeader, denmaMCPClientHeader, denmaMCPConnectorHeader, "Cookie", "Origin", "Referer", denmaTabHeader} {
 		r.Header.Del(h)
 	}
 	denmaSandbox(ctr.app, c.Response().Header(), p)
