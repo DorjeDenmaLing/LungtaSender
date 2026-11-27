@@ -20,6 +20,7 @@ import (
 	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
+	"github.com/lib/pq"
 )
 
 // denmaTemplateTypeDesign is a design's template type, added in every center (cmd/denma_features.go).
@@ -374,18 +375,16 @@ func (a *App) denmaCheckTemplate(id int, o models.Template) error {
 	return nil
 }
 
-// denmaDesignLogoChanged puts a center's new logo in its default design.
+// denmaDesignLogoChanged puts a center's new logo in its default design and its default visual template.
 func (a *App) denmaDesignLogoChanged(oldLogo, newLogo string) {
-	id := a.denmaDefaultDesignID()
 	root := a.urlCfg.RootURL
 	from, to := denmaDesignLogo(oldLogo, root), denmaDesignLogo(newLogo, root)
-	if id == 0 || from == to {
+	if from == to {
 		return
 	}
-	fromJS, _ := json.Marshal(from)
-	toJS, _ := json.Marshal(to)
-	if _, err := a.db.Exec(`UPDATE templates SET body = replace(body, $2, $3), body_source = replace(body_source, $4, $5), updated_at = NOW() WHERE id = $1`,
-		id, html.EscapeString(from), html.EscapeString(to), string(fromJS), string(toJS)); err != nil {
-		a.log.Printf("denma: error putting the new logo in the center's design: %v", err)
+	ids := []int64{int64(a.denmaDefaultDesignID()), int64(a.denmaVisualTemplate())}
+	if _, err := a.db.Exec(denmaReplaceLogoSQL+` WHERE id = ANY($5) AND strpos(body_source, $3) > 0`,
+		append(denmaLogoArgs(from, to), pq.Array(ids))...); err != nil {
+		a.log.Printf("denma: error putting the new logo in the center's design and default template: %v", err)
 	}
 }

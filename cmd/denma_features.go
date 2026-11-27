@@ -105,6 +105,12 @@ func (d *denmaCenters) features(c *denmaCenter, db *sqlx.DB) error {
 			return fmt.Errorf("adding the center's design: %w", err)
 		}
 	}
+	// A new center's default template gets its logo (cmd/denma_default_template.go).
+	if ver < 9 {
+		if err := denmaDefaultTemplateLogoIn(tx); err != nil {
+			return fmt.Errorf("putting the logo in the default template: %w", err)
+		}
+	}
 	// Every center without one gets a default visual template.
 	if ver < 10 {
 		if err := denmaAddVisualDefault(tx); err != nil {

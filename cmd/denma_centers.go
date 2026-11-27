@@ -828,6 +828,9 @@ func (d *denmaCenters) provision(c *denmaCenter, db *sqlx.DB) (err error) {
 			return fmt.Errorf("setting %s: %v", k, err)
 		}
 	}
+	if err := denmaAddDefaultTemplate(db); err != nil { // cmd/denma_default_template.go
+		return fmt.Errorf("adding the default template: %v", err)
+	}
 	// Its website signups' lists, and the automation moving people on.
 	if err := denmaDefaultAutomation(db); err != nil { // cmd/denma_automations.go
 		return fmt.Errorf("adding the website signups' automation: %v", err)

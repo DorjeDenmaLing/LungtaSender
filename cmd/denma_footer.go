@@ -63,12 +63,14 @@ func denmaSetContact(slug string, c denmaContact) {
 	}
 }
 
-// denmaFooterFuncs sets a center's details from its settings and adds their template tags.
+// denmaFooterFuncs sets a center's details from its settings and adds their template tags, and its name's.
 func denmaFooterFuncs(funcs template.FuncMap, ko *koanf.Koanf) {
 	slug := ko.String("denma.center")
 	denmaSetContact(slug, denmaContact{Address: ko.String("denma.postal_address"),
 		Website: ko.String("denma.website"), Email: ko.String("denma.contact_email")})
 	c := func() denmaContact { return denmaContactOf(slug) }
+	name := ko.String("app.site_name")
+	funcs["CenterName"] = func() string { return name }
 	funcs["CenterAddress"] = func() template.HTML { return denmaAddressHTML(c().Address) }
 	funcs["CenterAddressText"] = func() string { return c().Address }
 	funcs["CenterWebsite"] = func() template.HTML { return denmaLinkHTML(c().Website, denmaWebsiteText(c().Website)) }

@@ -55,6 +55,7 @@ const TAGS = [
     what: "The center's contact e-mail (Config → General), as a link.",
     need: (t) => t.has('CenterEmail') || t.shows('email'),
   },
+  { tag: '{{ CenterName }}', what: "The center's name (Config → General)." },
   {
     tag: '{{ ManageURL }}', types: CAMPAIGN,
     what: 'The address of the page where they choose which lists they get, for a link\'s href.',
