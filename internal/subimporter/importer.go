@@ -172,10 +172,6 @@ func New(opt Options, db *sql.DB, i *i18n.I18n) *Importer {
 // NewSession returns an new instance of Session. It takes the name
 // of the uploaded file, but doesn't do anything with it but retains it for stats.
 func (im *Importer) NewSession(opt SessionOpt) (*Session, error) {
-	if !im.isDone() {
-		return nil, errors.New("an import is already running")
-	}
-
 	// For API backwards compatibility, if the old 'overwrite'
 	// field is set, set both overwrite fields to true.
 	if opt.Overwrite {
@@ -184,6 +180,14 @@ func (im *Importer) NewSession(opt SessionOpt) (*Session, error) {
 	}
 
 	im.Lock()
+	if im.status.Status == StatusImporting || im.status.Status == StatusStopping { // denma: checked under the lock
+		im.Unlock()
+		return nil, errors.New("an import is already running")
+	}
+	select { // denma: a stop left from the last import doesn't stop this one
+	case <-im.stop:
+	default:
+	}
 	im.status = Status{Status: StatusImporting,
 		Name:   opt.Filename,
 		logBuf: bytes.NewBuffer(nil)}
@@ -244,7 +248,7 @@ func (im *Importer) getStatus() string {
 func (im *Importer) isDone() bool {
 	s := true
 	im.RLock()
-	if im.getStatus() == StatusImporting || im.getStatus() == StatusStopping {
+	if im.status.Status == StatusImporting || im.status.Status == StatusStopping { // denma: one lock
 		s = false
 	}
 	im.RUnlock()
@@ -490,6 +494,7 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close() // denma
 
 	// Count the total number of lines in the file. This doesn't distinguish
 	// between "blank" and non "blank" lines, and is only used to derive
