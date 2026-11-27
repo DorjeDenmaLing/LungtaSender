@@ -3,6 +3,7 @@ import Squire from 'squire-rte';
 import { beautifyHTML } from './content.js';
 import { setupTable } from './richtext/table.js';
 import { setupResize } from './richtext/resize.js';
+import { denmaPasteImages } from './denma-richtext-paste.js'; // denma: pasted images go to Media
 import {
   i18n, t, closestInSelection, PALETTE, EMOJIS, CHARS,
 } from './richtext/data.js';
@@ -63,6 +64,7 @@ class RichtextEditor extends HTMLElement {
     } else {
       this.initToolbar();
       this.initShortcuts();
+      denmaPasteImages(this); // denma: pasted images go to Media
       this.#setupFind();
       this.#setupOverflow();
       this.#fillGrids();
