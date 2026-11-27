@@ -114,6 +114,39 @@ func TestDenmaSESTopics(t *testing.T) {
 	}
 }
 
+// A configuration set's events (eventType, no notificationType) are taken:
+// a complaint as a complaint, a bounce by its type; other events are refused.
+func TestDenmaSESConfigSetEvents(t *testing.T) {
+	const hub = "arn:aws:sns:ca-central-1:111111111111:ses-feedback"
+	defer func(f func(string) bool) { DenmaSESTopicAllowed = f }(DenmaSESTopicAllowed)
+	DenmaSESTopicAllowed = func(arn string) bool { return arn == hub }
+
+	s, key := denmaTestSES(t)
+	send := func(msg string) (string, error) {
+		n := sesNotif{Type: "Notification", MessageId: "m1", TopicArn: hub, Message: msg,
+			Timestamp: "2026-10-16T10:00:01.000Z", SignatureVersion: "1"}
+		b, err := s.ProcessBounce(denmaSign(t, s, key, n))
+		return string(b.Type), err
+	}
+	mail := `"mail":{"timestamp":"2026-10-16T10:00:00.000Z","destination":["someone@example.org"]}`
+
+	for msg, want := range map[string]string{
+		`{"eventType":"Complaint","complaint":{"complainedRecipients":[{"emailAddress":"someone@example.org"}]},` + mail + `}`: "complaint",
+		`{"eventType":"Bounce","bounce":{"bounceType":"Permanent"},` + mail + `}`:                                              "hard",
+		`{"eventType":"Bounce","bounce":{"bounceType":"Transient"},` + mail + `}`:                                              "soft",
+		`{"notificationType":"Complaint",` + mail + `}`:                                                                        "complaint",
+	} {
+		if got, err := send(msg); err != nil || got != want {
+			t.Errorf("%s: %q, %v; want %q", msg, got, err, want)
+		}
+	}
+	for _, ev := range []string{"Delivery", "Send", "Open"} {
+		if _, err := send(`{"eventType":"` + ev + `",` + mail + `}`); err == nil {
+			t.Errorf("a %s event was taken", ev)
+		}
+	}
+}
+
 // A bounce or complaint is recorded against who SES says bounced or
 // complained, not the e-mail's first recipient.
 func TestDenmaSESRecipient(t *testing.T) {
