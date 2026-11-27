@@ -56,6 +56,7 @@ func initDenmaAPIHandlers(g *echo.Group, a *App) {
 	initDenmaListMoveHandlers(g, a)    // cmd/denma_listmove.go
 	initDenmaRetryHandlers(g, a)       // cmd/denma_retries.go
 	initDenmaStartHandlers(g, a)       // cmd/denma_start.go
+	initDenmaTemplateUseHandlers(g, a) // cmd/denma_mcp_template_use.go
 	initDenmaPeopleAPIHandlers(g, a)
 	initDenmaPasswordResetHandlers(g, a) // cmd/denma_password_reset.go
 	initDenmaDomainAPIHandlers(g, a)     // cmd/denma_domains.go
