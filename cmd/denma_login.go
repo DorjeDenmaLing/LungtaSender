@@ -4,6 +4,8 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -464,10 +466,12 @@ func (a *App) DenmaLoginEmail(c echo.Context) error {
 		return c.Render(code, tplMessage, makeMsgTpl(title, "", text))
 	}
 	var ch struct {
-		PersonID int    `db:"person_id"`
+		PersonID int    `db:"id"` // a hub superadmin's ID when Hub
 		Email    string `db:"email"`
+		Hub      bool   `db:"hub"`
 	}
-	if err := a.db.Get(&ch, `SELECT person_id, email FROM denma.person_email_changes WHERE token_hash = $1 AND expires_at > NOW()`,
+	if err := a.db.Get(&ch, `SELECT person_id AS id, email, FALSE AS hub FROM denma.person_email_changes WHERE token_hash = $1 AND expires_at > NOW()
+		UNION ALL SELECT hub_user_id, email, TRUE FROM denma.hub_email_changes WHERE token_hash = $1 AND expires_at > NOW()`,
 		denmaTokenHash(token)); err != nil || len(token) < tmpAuthTokenLen {
 		return msg(http.StatusBadRequest, "This link has expired or has been used. Change your address on your Profile page again.")
 	}
@@ -481,6 +485,19 @@ func (a *App) DenmaLoginEmail(c echo.Context) error {
 			return err
 		}
 		defer tx.Rollback()
+		if ch.Hub {
+			res, err := tx.Exec(denmaInSchema(`UPDATE S.users SET email = $2, updated_at = NOW() WHERE id = $1`, denmaHub.baseSchema), ch.PersonID, ch.Email)
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return sql.ErrNoRows
+			}
+			if _, err := tx.Exec(`DELETE FROM denma.hub_email_changes WHERE hub_user_id = $1`, ch.PersonID); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}
 		if _, err := tx.Exec(`UPDATE denma.people SET email = $2, updated_at = NOW() WHERE id = $1`, ch.PersonID, ch.Email); err != nil {
 			return err
 		}
@@ -494,6 +511,9 @@ func (a *App) DenmaLoginEmail(c echo.Context) error {
 	}()
 	if denmaUniqueViolation(err) {
 		return msg(http.StatusBadRequest, "This address is already someone else's, so it can't be yours too.")
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return msg(http.StatusBadRequest, "This link has expired or has been used. Change your address on your Profile page again.")
 	}
 	if err != nil {
 		a.log.Printf("denma: error changing person %d's e-mail address: %v", ch.PersonID, err)

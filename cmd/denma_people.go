@@ -85,6 +85,13 @@ func denmaInitPeople(db *sqlx.DB) error {
 			token_hash TEXT NOT NULL,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 		);
+		-- A hub superadmin's new e-mail address until they open the link sent to it.
+		CREATE TABLE IF NOT EXISTS denma.hub_email_changes (
+			hub_user_id INTEGER PRIMARY KEY,
+			email       TEXT NOT NULL,
+			token_hash  TEXT NOT NULL,
+			expires_at  TIMESTAMP WITH TIME ZONE NOT NULL
+		);
 		-- Browsers that have signed in to an account (cmd/denma_throttle.go).
 		CREATE TABLE IF NOT EXISTS denma.login_devices (
 			token_hash TEXT PRIMARY KEY,
@@ -697,6 +704,9 @@ func (a *App) denmaUpdateOwnAccount(c echo.Context) (bool, error) {
 		return true, err
 	}
 	if p == nil {
+		if denmaHub != nil && !a.denmaInCenter() {
+			return a.denmaUpdateHubProfile(c, user)
+		}
 		return a.denmaCheckHubProfile(c, user)
 	}
 
@@ -788,6 +798,77 @@ func (a *App) denmaCheckHubProfile(c echo.Context, user auth.User) (bool, error)
 	return false, nil
 }
 
+// denmaUpdateHubProfile saves a hub superadmin's Profile: name and password; a new address is theirs once its link is opened.
+func (a *App) denmaUpdateHubProfile(c echo.Context, user auth.User) (bool, error) {
+	if !user.PasswordLogin {
+		return false, nil
+	}
+	var u denmaProfileReq
+	if err := c.Bind(&u); err != nil {
+		return true, err
+	}
+	cur, err := a.core.GetUser(user.ID, "", "")
+	if err != nil {
+		return true, err
+	}
+	var (
+		name     = strings.TrimSpace(u.Name)
+		email    = strings.ToLower(strings.TrimSpace(u.Email.String))
+		password = u.Password.String
+	)
+	if name == "" {
+		name = cur.Name
+	}
+	if !utils.ValidateEmail(email) {
+		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "email"))
+	}
+	if password != "" && !strHasLen(password, 8, stdInputMaxLen) {
+		return true, echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "password"))
+	}
+	newEmail := !strings.EqualFold(email, cur.Email.String)
+	if newEmail || password != "" {
+		if err := a.denmaHubPassword(cur, u.CurrentPassword, errDenmaCurrentPassword); err != nil {
+			return true, err
+		}
+	}
+
+	out, err := a.core.UpdateUserProfile(user.ID, auth.User{Name: name, Email: cur.Email, PasswordLogin: true, Password: u.Password})
+	if err != nil {
+		return true, err
+	}
+	if password != "" {
+		if err := a.core.DeleteUserSessions(user.ID, auth.GetSessionID(c)); err != nil {
+			a.log.Printf("denma: error ending sessions after user %d's password change: %v", user.ID, err)
+		}
+		a.denmaEndCenterSessions(user.ID)
+	}
+	// Taken or not, the link is sent.
+	if newEmail {
+		token, err := generateRandomString(tmpAuthTokenLen)
+		if err != nil {
+			return true, denmaInternal(err)
+		}
+		if _, err := a.db.Exec(`INSERT INTO denma.hub_email_changes (hub_user_id, email, token_hash, expires_at) VALUES ($1, $2, $3, $4)
+			ON CONFLICT (hub_user_id) DO UPDATE SET email = EXCLUDED.email, token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at`,
+			user.ID, email, denmaTokenHash(token), time.Now().Add(denmaEmailChangeTTL)); err != nil {
+			return true, denmaInternal(err)
+		}
+		if err := a.denmaMailEmailChange(token, email); err != nil {
+			return true, denmaInternal(err)
+		}
+	}
+
+	out.Password = null.String{}
+	res := struct {
+		auth.User
+		EmailPending string `json:"denma_email_pending,omitempty"` // static/admin/assets/js/views/profile.js
+	}{User: out}
+	if newEmail {
+		res.EmailPending = email
+	}
+	return true, c.JSON(http.StatusOK, okResp{res})
+}
+
 // denmaSendEmailChange e-mails a person's new address a link to make it theirs (DenmaLoginEmail).
 func (a *App) denmaSendEmailChange(p *denmaPerson, email string) error {
 	token, err := generateRandomString(tmpAuthTokenLen)
@@ -799,12 +880,17 @@ func (a *App) denmaSendEmailChange(p *denmaPerson, email string) error {
 		p.ID, email, denmaTokenHash(token), time.Now().Add(denmaEmailChangeTTL)); err != nil {
 		return err
 	}
-	link := strings.TrimSuffix(denmaHub.current().urlCfg.RootURL, "/") + denmaEmailPath + "?token=" + url.QueryEscape(token)
 	if ms, err := denmaHub.centersOf(p.ID); err == nil && len(ms) > 0 {
 		if ctr := denmaHub.get(ms[0].Slug); ctr != nil {
 			a = ctr.app
 		}
 	}
+	return a.denmaMailEmailChange(token, email)
+}
+
+// denmaMailEmailChange sends email the link to make it its owner's address, from a's center or the hub.
+func (a *App) denmaMailEmailChange(token, email string) error {
+	link := strings.TrimSuffix(denmaHub.current().urlCfg.RootURL, "/") + denmaEmailPath + "?token=" + url.QueryEscape(token)
 	var msg bytes.Buffer
 	if err := a.notifs.Tpls.ExecuteTemplate(&msg, "denma-email-change", struct {
 		URL   string
