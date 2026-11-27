@@ -54,21 +54,7 @@
 		"Label" "Icon for narrow screens" "Placeholder" "https://example.org/icon.png"
 		"Hint" "A small square version for narrow screens. Empty: the logo.") }}
 </fieldset>
-{{- if Can .Data.Profile "media:get" }}
-<dialog id="denma-media-picker" class="media-picker-modal" data-src="{{ URI "/admin/campaigns/media/fragment" }}">
-	<div class="dialog-card">
-		<header class="dialog-head hstack justify-between">
-			<h4 class="dialog-title">{{ .L.T "media.title" }}</h4>
-		</header>
-		<section class="dialog-body">
-			<iframe title="{{ .L.T "media.title" }}"></iframe>
-		</section>
-		<footer class="dialog-foot align-right">
-			<button type="button" class="outline" autofocus @click="$el.closest('dialog').close()">{{ .L.T "globals.buttons.close" }}</button>
-		</footer>
-	</div>
-</dialog>
-{{- end }}
+{{ template "denma-media-picker" . }}
 {{- end }}
 {{ end }}
 

@@ -1,0 +1,26 @@
+{{/* Media's picker for any field ($denmaPickMedia, assets/js/denma-media-pick.js), for those who can see Media. */}}
+{{ define "denma-media-picker" }}
+{{- if Can .Data.Profile "media:get" }}
+<dialog id="denma-media-picker" class="media-picker-modal" data-src="{{ URI "/admin/campaigns/media/fragment" }}">
+	<div class="dialog-card">
+		<header class="dialog-head hstack justify-between">
+			<h4 class="dialog-title">{{ .L.T "media.title" }}</h4>
+		</header>
+		<section class="dialog-body">
+			<iframe title="{{ .L.T "media.title" }}"></iframe>
+		</section>
+		<footer class="dialog-foot align-right">
+			<button type="button" class="outline" autofocus @click="$el.closest('dialog').close()">{{ .L.T "globals.buttons.close" }}</button>
+		</footer>
+	</div>
+</dialog>
+{{- end }}
+{{ end }}
+
+{{/* The template editor: the visual editor's "choose from media" opens Media's picker and puts the file in the image. */}}
+{{ define "denma-template-media" }}
+{{- if Can .Data.Profile "media:get" }}
+<span hidden x-init="$el.parentElement.addEventListener('visual-media', (e) => $denmaPickMedia((url) => e.target.insertMedia(url)))"></span>
+{{ template "denma-media-picker" . }}
+{{- end }}
+{{ end }}
