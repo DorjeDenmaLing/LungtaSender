@@ -13,9 +13,9 @@ var (
 )
 
 // DenmaFooterHTML is what {{ CenterFooter }} writes in an e-mail: the unsubscribe and "view in browser" links.
-const DenmaFooterHTML = `<div class="footer" style="text-align: center;font-size: 12px;color: #888;"><p>` +
-	`<a href="{{ UnsubscribeURL }}" style="color: #888;">{{ L.T "email.unsub" }}</a>&nbsp;&nbsp;` +
-	`<a href="{{ MessageURL }}" style="color: #888;">{{ L.T "email.viewInBrowser" }}</a></p></div>`
+const DenmaFooterHTML = `<div class="footer" style="text-align: center;font-size: 12px;color: #666;"><p>` +
+	`<a href="{{ UnsubscribeURL }}" style="color: #666;">{{ L.T "email.unsub" }}</a>&nbsp;&nbsp;` +
+	`<a href="{{ MessageURL }}" style="color: #666;">{{ L.T "email.viewInBrowser" }}</a></p></div>`
 
 // DenmaFooterText is what it writes in plain text.
 const DenmaFooterText = `{{ L.T "email.unsub" }}: {{ UnsubscribeURL }}

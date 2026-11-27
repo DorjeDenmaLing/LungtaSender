@@ -469,15 +469,15 @@ func denmaAddContactToTemplates(tx *sqlx.Tx) (int, error) {
 const (
 	denmaDesignContactBlock = "block-denma-design-contact"
 	denmaDesignContactText  = "{{ CenterWebsite }} · {{ CenterEmail }}"
-	denmaDesignFooterHTML   = `<div style="color:#888888;font-size:12px;text-align:center;padding:0px 40px 4px 40px">` + denmaAddressTag + `</div>` +
-		`<div style="color:#888888;font-size:12px;text-align:center;padding:0px 40px 30px 40px">` + denmaDesignContactText + `</div>`
+	denmaDesignFooterHTML   = `<div style="color:#666666;font-size:12px;text-align:center;padding:0px 40px 4px 40px">` + denmaAddressTag + `</div>` +
+		`<div style="color:#666666;font-size:12px;text-align:center;padding:0px 40px 30px 40px">` + denmaDesignContactText + `</div>`
 )
 
 // denmaDesignFooter is the design's address and contact blocks.
 func denmaDesignFooter(pad func(t, r, b, l int) map[string]int) map[string]map[string]any {
 	text := func(s string, bottom int) map[string]any {
 		return map[string]any{"type": "Text", "data": map[string]any{
-			"style": map[string]any{"color": "#888888", "fontSize": 12, "textAlign": "center", "padding": pad(0, 40, bottom, 40)},
+			"style": map[string]any{"color": "#666666", "fontSize": 12, "textAlign": "center", "padding": pad(0, 40, bottom, 40)},
 			"props": map[string]any{"text": s},
 		}}
 	}
