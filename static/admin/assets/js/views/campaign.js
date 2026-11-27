@@ -57,7 +57,7 @@ function component(camp, sel) {
     ...denmaUnsaved({ skip: ['testEmails', 'status', 'uuid'], save() { return this.isNew ? this.onCreate() : (this.canEdit ? this.onSave() : this.onSaveArchive()); } }), // denma
     ...denmaVersions({ kind: 'campaign', version: c.version, id() { return this.form.id; }, base() { const f = this.denmaSavedForm(); return f && this._payload.call({ form: f }); } }), // denma
     ...denmaHistory({ kind: 'campaign', id() { return this.form.id; }, canRestore() { return this.canEdit; } }), // denma
-    ...denmaEditing({ kind: 'campaign', id() { return this.form.id; } }), // denma
+    ...denmaEditing({ kind: 'campaign', id() { return this.form.id; }, editable() { return this.canEdit; } }), // denma
     isNew,
     activeTab: 'campaign',
     contentReady: false,

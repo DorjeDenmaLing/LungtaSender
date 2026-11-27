@@ -104,17 +104,18 @@ const NOUN = { campaign: 'campaign', template: 'template', automation: 'automati
 const LOADING = { campaign: 'campaigns', template: 'templates', automation: 'automation' }; // each editor's Save
 const STOP = Symbol('stop'); // the save ends without an answer
 
-// The merge of mine and theirs from base (null: unknown, so every difference is asked about):
-// [merged save, the groups both changed differently].
-export function denmaMerge(kind, base, mine, theirs) {
+// The merge of mine and theirs from base (null: unknown, so every difference is asked about), [merged save, the
+// groups both changed differently]; theirBase is what the server had at base's version, if the page's base differs.
+export function denmaMerge(kind, base, mine, theirs, theirBase = base) {
   const b = base ? NORM[kind](base) : null;
+  const tb = theirBase ? NORM[kind](theirBase) : null;
   const m = NORM[kind](mine);
   const t = NORM[kind](theirs);
   const merged = { ...mine };
   const clashes = [];
   GROUPS[kind].forEach(([label, keys]) => {
     const mineChanged = !b || keys.some((k) => !same(m[k], b[k]));
-    const theirsChanged = !b || keys.some((k) => !same(t[k], b[k]));
+    const theirsChanged = !tb || keys.some((k) => !same(t[k], tb[k]));
     if (!theirsChanged || keys.every((k) => same(m[k], t[k]))) {
       return;
     }
@@ -146,8 +147,58 @@ function peek(v) {
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
 
+// Fields shown by name in the dialog, and the names' group.
+const POOLED = {
+  lists: 'lists', list_ids: 'lists', add_list_ids: 'lists', remove_list_ids: 'lists', media: 'media',
+};
+
+// The names of lists and attachments, by ID, from the versions read and the page's own.
+function namePool(page, ...versions) {
+  const pool = { lists: {}, media: {} };
+  const add = (group, xs, field) => (Array.isArray(xs) ? xs : []).forEach((x) => {
+    if (x && typeof x === 'object' && x.id && (x[field] || !pool[group][x.id])) {
+      pool[group][x.id] = x[field] || '';
+    }
+  });
+  versions.forEach((d) => { add('lists', d && d.lists, 'name'); add('media', d && d.media, 'filename'); });
+  add('lists', window._lists, 'name');
+  add('lists', page.form && page.form.lists, 'name');
+  add('media', page.form && page.form.media, 'filename');
+  return pool;
+}
+
+// What a side of a Content clash has that the other lacks: its first such line, and how many more.
+function contentGist(kind, own, other) {
+  const a = contentLines(kind, own);
+  const d = diffLines(a, contentLines(kind, other));
+  if (!d) {
+    return `${a.length} lines`;
+  }
+  const only = d.filter((l) => !l.add).map((l) => l.text);
+  if (!only.length) {
+    return own.content_type !== other.content_type ? `as ${own.content_type}` : '(nothing of its own)';
+  }
+  return `${peek(only[0])}${only.length > 1 ? ` (and ${only.length - 1} more lines)` : ''}`;
+}
+
+// What a side of a clash says, for the dialog.
+function clashText(kind, c, side, pool) {
+  if (c.label === 'Content') {
+    return contentGist(kind, c[side], c[side === 'mine' ? 'theirs' : 'mine']);
+  }
+  const differ = c.keys.filter((k) => !same(c.mine[k], c.theirs[k]));
+  const show = (k) => {
+    const v = c[side][k];
+    if (!POOLED[k]) {
+      return peek(v);
+    }
+    return v.length ? v.map((i) => pool[POOLED[k]][i] || `#${i}`).join(', ') : '(none)';
+  };
+  return differ.map((k) => (differ.length > 1 ? `${k.replace(/_/g, ' ')} ${show(k)}` : show(k))).join(' · ');
+}
+
 // The dialog: resolves { label: 'mine' | 'theirs' } or null if cancelled.
-function ask(kind, now, clashes) {
+function ask(kind, now, clashes, pool) {
   const tpl = document.getElementById('confirm-dialog-template');
   const [who, at] = whoWhen(now);
   return new Promise((resolve) => {
@@ -163,7 +214,6 @@ function ask(kind, now, clashes) {
       const lg = document.createElement('legend');
       lg.textContent = c.label;
       fs.appendChild(lg);
-      const short = c.keys.length === 1 && c.label !== 'Content';
       [['mine', 'Yours'], ['theirs', `${who.split(' (')[0]}'s`]].forEach(([v, name]) => {
         const l = document.createElement('label');
         const r = document.createElement('input');
@@ -172,7 +222,7 @@ function ask(kind, now, clashes) {
         r.value = v;
         r.checked = v === 'mine';
         r.dataset.choice = c.label;
-        l.append(r, ` ${name}${short ? `: ${peek(c[v][c.keys[0]])}` : ''}`);
+        l.append(r, ` ${name}: ${clashText(kind, c, v, pool)}`);
         fs.appendChild(l);
       });
       field.appendChild(fs);
@@ -220,8 +270,22 @@ async function put(uri, data) {
   }
 }
 
-// kind: campaign, template or automation; version: as loaded; id(): the item's; base(): the page's save as it
-// was loaded or last saved, null if unknown.
+// The item as the server kept it at version, or null.
+async function savedAt(kind, item, version) {
+  const get = async (uri) => {
+    const resp = await fetch(`${urls.api}/denma/versions/${kind}/${item}${uri}`, { headers: { Accept: 'application/json' } });
+    return resp.ok ? (await resp.json()).data : null;
+  };
+  try {
+    const row = ((await get('')) || []).find((v) => !v.set_aside && v.version === version);
+    const one = row && await get(`/${row.id}`);
+    return one ? one.data : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// kind: campaign, template or automation; version: as loaded; id(): the item's; base(): the page's save as last loaded or saved.
 export function denmaVersions({
   kind, version, id, base,
 }) {
@@ -229,8 +293,7 @@ export function denmaVersions({
     denmaVersion: version || 0,
     denmaSaving: false,
 
-    // Saves over the version it started from. Merged with someone else's save, it saves the merge and reloads
-    // the page to show it; the promise then doesn't resolve, nor if the person cancels.
+    // Saves over the version it started from; a merge reloads the page, and then, or if cancelled, never resolves.
     async denmaPut(uri, payload) {
       if (this.denmaSaving) {
         return new Promise(() => {}); // a save is under way
@@ -273,10 +336,13 @@ export function denmaVersions({
         const item = id.call(this);
         // eslint-disable-next-line no-await-in-loop
         const now = await api('versions', `/denma/versions/${kind}/${item}/now`);
-        const [merged, clashes] = denmaMerge(kind, from, save, now.data);
+        // Theirs is compared with what the server had, not the page's base, which an editor may have rewritten.
+        // eslint-disable-next-line no-await-in-loop
+        const theirBase = tries === 0 ? await savedAt(kind, item, ver) : null;
+        const [merged, clashes] = denmaMerge(kind, from, save, now.data, theirBase || from);
         if (clashes.length) {
           // eslint-disable-next-line no-await-in-loop
-          const choice = await ask(kind, now, clashes);
+          const choice = await ask(kind, now, clashes, namePool(this, now.data, theirBase, from));
           if (!choice) {
             return STOP; // nothing saved; the page keeps the edit
           }
@@ -523,9 +589,11 @@ export function denmaHistory({ kind, id, canRestore = () => true }) {
       const at = new Date(v.saved_at).toLocaleString([], {
         day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
       });
-      const ask = () => u.confirm(`Restore the version of ${at}? It's saved as a new version, `
-        + 'so nothing is lost: what\'s there now stays in the history.');
-      if (!(await (this.denmaUnsavedFirst ? this.denmaUnsavedFirst('restoring', ask) : ask()))) {
+      if (!(await u.confirm(`Restore the version of ${at}? It's saved as a new version, `
+        + 'so nothing is lost: what\'s there now stays in the history.'))) {
+        return;
+      }
+      if (this.denmaUnsavedFirst && !(await this.denmaUnsavedFirst(`restoring the version of ${at}`))) {
         return;
       }
       const item = id.call(this);
@@ -547,8 +615,9 @@ export function denmaHistory({ kind, id, canRestore = () => true }) {
 
 // ---- Who else has it open, and whether it's been saved since the page loaded it.
 
-// kind and id() as for denmaVersions. The page calls denmaEditingStart() in its init.
-export function denmaEditing({ kind, id }) {
+// kind and id() as for denmaVersions; editable(): whether this page can save (else it only watches). The page calls
+// denmaEditingStart() in its init.
+export function denmaEditing({ kind, id, editable = () => true }) {
   const tab = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let timer = null;
   return {
@@ -565,7 +634,7 @@ export function denmaEditing({ kind, id }) {
         const resp = await fetch(`${urls.api}/denma/editing/${kind}/${item}`, {
           method: 'POST',
           keepalive: leaving,
-          body: JSON.stringify({ tab, leaving }),
+          body: JSON.stringify({ tab, leaving, viewing: !editable.call(this) }),
           headers: { Accept: 'application/json', 'Content-Type': 'application/json; charset=utf-8' },
         });
         if (leaving || !resp.ok) {
@@ -582,12 +651,22 @@ export function denmaEditing({ kind, id }) {
     },
 
     denmaEditingStart() {
+      const beat = () => {
+        clearInterval(timer);
+        timer = setInterval(() => { if (!document.hidden) this._denmaEditingPing(); }, 30000);
+      };
       this._denmaEditingPing();
-      timer = setInterval(() => { if (!document.hidden) this._denmaEditingPing(); }, 30000);
+      beat();
       document.addEventListener('visibilitychange', () => { if (!document.hidden) this._denmaEditingPing(); });
       window.addEventListener('pagehide', () => {
         clearInterval(timer);
         this._denmaEditingPing(true);
+      });
+      window.addEventListener('pageshow', (e) => {
+        if (e.persisted) {
+          this._denmaEditingPing();
+          beat();
+        }
       });
     },
 

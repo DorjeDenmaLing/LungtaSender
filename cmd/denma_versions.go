@@ -1,7 +1,6 @@
 package main
 
-// denma: versions of campaigns, templates and automations. A save gives the version it started from and is refused
-// if someone saved since; each save is kept in the item's history; editors say who else has it open.
+// denma: versions of campaigns, templates and automations: saves over their starting version, a history, who's editing.
 
 import (
 	"context"
@@ -24,8 +23,9 @@ import (
 )
 
 const (
-	denmaVersionsMax      = 30 // kept of each item
+	denmaVersionsMax      = 30 // saves kept of each item
 	denmaVersionsMaxSQL   = "30"
+	denmaVersionAsideKeep = 5 // edits set aside kept of each item
 	denmaVersionsSentDays = 60  // kept after a campaign's sending ends
 	denmaVersionsDays     = 365 // kept of templates and automations
 	denmaVersionAsideMax  = 5 << 20
@@ -111,7 +111,7 @@ BEGIN
     RETURN NEW;
 END $$;
 
--- At commit, a new version is kept with who saved it (denma.saved_by...), unless nothing changed; at most 30.
+-- At commit, a new version is kept with who saved it (denma.saved_by...), unless nothing changed; at most 30 saves.
 CREATE OR REPLACE FUNCTION denma_record_version() RETURNS TRIGGER LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     col TEXT := TG_ARGV[0];
@@ -134,7 +134,7 @@ BEGIN
             COALESCE(current_setting('denma.saved_by', true), ''), COALESCE(current_setting('denma.via', true), ''),
             CASE WHEN last_d IS NULL THEN '{}'::TEXT[]
                 ELSE ARRAY(SELECT key FROM jsonb_object_keys(d) key WHERE d -> key IS DISTINCT FROM last_d -> key ORDER BY key) END, d;
-    EXECUTE format('DELETE FROM denma_versions WHERE %I = $1 AND id NOT IN (SELECT id FROM denma_versions WHERE %I = $1 ORDER BY id DESC LIMIT ` +
+    EXECUTE format('DELETE FROM denma_versions WHERE %I = $1 AND NOT set_aside AND id NOT IN (SELECT id FROM denma_versions WHERE %I = $1 AND NOT set_aside ORDER BY id DESC LIMIT ` +
 	denmaVersionsMaxSQL + `)', col, col) USING NEW.id;
     RETURN NULL;
 END $$;
@@ -311,6 +311,13 @@ func (a *App) denmaUpdateCampaign(c echo.Context, id int, o *campReq) (models.Ca
 	if err := denmaBeginSave(c, tx, "campaign", id, o.DenmaVersion); err != nil {
 		return models.Campaign{}, err
 	}
+	var status string
+	if err := tx.Get(&status, `SELECT status FROM campaigns WHERE id = $1`, id); err != nil {
+		return models.Campaign{}, denmaInternal(err)
+	}
+	if !canEditCampaign(status) { // the status under the lock: a start just before this save refuses it
+		return models.Campaign{}, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("campaigns.cantUpdate"))
+	}
 	if err := a.core.DenmaUpdateCampaignTx(tx, id, o.Campaign, o.ListIDs, o.MediaIDs); err != nil {
 		return models.Campaign{}, err
 	}
@@ -451,6 +458,25 @@ func (a *App) DenmaGetVersion(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
+// denmaVersionDB is a database or a transaction.
+type denmaVersionDB interface {
+	Get(dest any, query string, args ...any) error
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// denmaAddAside keeps an edit set aside as the item's newest version, and the newest 5 of them.
+func denmaAddAside(db denmaVersionDB, k denmaVersionKind, id, version, uid int, name, via string, data []byte) (int64, error) {
+	var vid int64
+	if err := db.Get(&vid, `INSERT INTO denma_versions (`+k.col+`, version, user_id, saved_by, via, set_aside, data)
+		SELECT $1::INT, $2::INT, $3::INT, $4::TEXT, $5::TEXT, true, $6::JSONB FROM `+k.table+` WHERE id = $1 RETURNING id`,
+		id, version, uid, name, via, string(data)); err != nil {
+		return 0, err
+	}
+	_, err := db.Exec(`DELETE FROM denma_versions WHERE `+k.col+` = $1 AND set_aside AND id NOT IN (SELECT id FROM denma_versions
+		WHERE `+k.col+` = $1 AND set_aside ORDER BY id DESC LIMIT $2)`, id, denmaVersionAsideKeep)
+	return vid, err
+}
+
 // DenmaSetAsideVersion keeps the person's own edit, which they chose not to save over someone else's, in the history.
 func (a *App) DenmaSetAsideVersion(c echo.Context) error {
 	k, id, err := a.denmaVersionItem(c, true)
@@ -472,18 +498,12 @@ func (a *App) DenmaSetAsideVersion(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "The version to keep is missing.")
 	}
 	uid, name, via := denmaSaver(c)
-	var vid int64
-	if err := a.db.Get(&vid, `INSERT INTO denma_versions (`+k.col+`, version, user_id, saved_by, via, set_aside, data)
-		SELECT $1::INT, $2::INT, $3::INT, $4::TEXT, $5::TEXT, true, $6::JSONB FROM `+k.table+` WHERE id = $1 RETURNING id`,
-		id, req.Version, uid, name, via, string(req.Data)); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("That %s doesn't exist.", k.noun))
-		}
-		return denmaInternal(err)
+	vid, err := denmaAddAside(a.db, k, id, req.Version, uid, name, via, req.Data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("That %s doesn't exist.", k.noun))
 	}
-	if _, err := a.db.Exec(`DELETE FROM denma_versions WHERE `+k.col+` = $1 AND id NOT IN (SELECT id FROM denma_versions
-		WHERE `+k.col+` = $1 ORDER BY id DESC LIMIT $2)`, id, denmaVersionsMax); err != nil {
-		a.log.Printf("denma: error keeping %s %d's newest versions: %v", k.noun, id, err)
+	if err != nil {
+		return denmaInternal(err)
 	}
 	return c.JSON(http.StatusOK, okResp{map[string]int64{"id": vid}})
 }
@@ -504,8 +524,7 @@ const denmaEditingTTL = 75 * time.Second // an editor says it's open every 30 se
 
 var reDenmaTab = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
 
-// denmaEditorsOf records (or ends) a tab's editing of key, and returns who else has it open: their names, and
-// whether one of them is the same person in another window.
+// denmaEditorsOf records (or ends) a tab's editing of key, and returns who else has it open, and whether it's you.
 func denmaEditorsOf(key, tab string, uid int, name string, leaving bool) ([]string, bool) {
 	denmaEditors.Lock()
 	defer denmaEditors.Unlock()
@@ -550,6 +569,36 @@ func denmaEditorsOf(key, tab string, uid int, name string, leaving bool) ([]stri
 	return names, self
 }
 
+// denmaEditingOut is what an editor is told: who else has the item open, and the item's version and last saver.
+type denmaEditingOut struct {
+	Others  []string   `json:"others"`
+	Self    bool       `json:"self"`
+	Version int        `db:"version" json:"version"`
+	SavedBy string     `db:"saved_by" json:"saved_by"`
+	Via     string     `db:"via" json:"via"`
+	SavedAt *time.Time `db:"saved_at" json:"saved_at"`
+}
+
+// denmaEditingOf records a tab's editing of an item that exists, and says who else has it open. A viewer only asks.
+func denmaEditingOf(db denmaVersionDB, k denmaVersionKind, key string, id int, tab string, uid int, name string, leaving, viewing bool) (denmaEditingOut, error) {
+	out := denmaEditingOut{Others: []string{}}
+	if err := db.Get(&out, `SELECT t.denma_version AS version, COALESCE(v.saved_by, '') AS saved_by, COALESCE(v.via, '') AS via,
+		v.saved_at FROM `+k.table+` t LEFT JOIN LATERAL (SELECT saved_by, via, saved_at FROM denma_versions
+			WHERE `+k.col+` = t.id AND NOT set_aside AND version = t.denma_version ORDER BY id DESC LIMIT 1) v ON true
+		WHERE t.id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return out, echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("That %s doesn't exist.", k.noun))
+		}
+		return out, denmaInternal(err)
+	}
+	others, self := denmaEditorsOf(key, tab, uid, name, leaving || viewing)
+	if others != nil {
+		out.Others = others
+	}
+	out.Self = self
+	return out, nil
+}
+
 // DenmaEditing records that a tab has an item open to edit, and answers who else has, and the item's version.
 func (a *App) DenmaEditing(c echo.Context) error {
 	k, id, err := a.denmaVersionItem(c, false)
@@ -559,31 +608,16 @@ func (a *App) DenmaEditing(c echo.Context) error {
 	var req struct {
 		Tab     string `json:"tab"`
 		Leaving bool   `json:"leaving"`
+		Viewing bool   `json:"viewing"`
 	}
 	if err := c.Bind(&req); err != nil || !reDenmaTab.MatchString(req.Tab) {
 		return echo.NewHTTPError(http.StatusBadRequest, "A tab's ID is needed.")
 	}
 	uid, name, _ := denmaSaver(c)
-	others, self := denmaEditorsOf(a.ko.String("denma.center")+"/"+c.Param("kind")+"/"+strconv.Itoa(id), req.Tab, uid, name, req.Leaving)
-	out := struct {
-		Others  []string   `json:"others"`
-		Self    bool       `json:"self"`
-		Version int        `db:"version" json:"version"`
-		SavedBy string     `db:"saved_by" json:"saved_by"`
-		Via     string     `db:"via" json:"via"`
-		SavedAt *time.Time `db:"saved_at" json:"saved_at"`
-	}{Others: others, Self: self}
-	if out.Others == nil {
-		out.Others = []string{}
-	}
-	if err := a.db.Get(&out, `SELECT t.denma_version AS version, COALESCE(v.saved_by, '') AS saved_by, COALESCE(v.via, '') AS via,
-		v.saved_at FROM `+k.table+` t LEFT JOIN LATERAL (SELECT saved_by, via, saved_at FROM denma_versions
-			WHERE `+k.col+` = t.id AND NOT set_aside AND version = t.denma_version ORDER BY id DESC LIMIT 1) v ON true
-		WHERE t.id = $1`, id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("That %s doesn't exist.", k.noun))
-		}
-		return denmaInternal(err)
+	_, _, cantManage := a.denmaVersionItem(c, true) // who can't change the item only watch
+	out, err := denmaEditingOf(a.db, k, a.ko.String("denma.center")+"/"+c.Param("kind")+"/"+strconv.Itoa(id), id, req.Tab, uid, name, req.Leaving, req.Viewing || cantManage != nil)
+	if err != nil {
+		return err
 	}
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -596,7 +630,8 @@ func initDenmaVersionHandlers(g *echo.Group, a *App) {
 	g.POST("/api/denma/versions/:kind/:id/aside", a.DenmaSetAsideVersion)
 }
 
-// denmaPruneVersions deletes versions of campaigns sent over 60 days ago, and of the rest over a year old.
+// denmaPruneVersions deletes versions of campaigns sent over 60 days ago, and of the rest over a year old, but never
+// an item's newest save.
 func denmaPruneVersions(ctx context.Context, db denmaExecer) (int64, error) {
 	res, err := db.ExecContext(ctx, `DELETE FROM denma_versions v USING campaigns c WHERE v.campaign_id = c.id
 		AND c.status IN ('finished', 'cancelled') AND c.updated_at < NOW() - make_interval(days => $1)`, denmaVersionsSentDays)
@@ -604,8 +639,10 @@ func denmaPruneVersions(ctx context.Context, db denmaExecer) (int64, error) {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
-	res, err = db.ExecContext(ctx, `DELETE FROM denma_versions WHERE campaign_id IS NULL
-		AND saved_at < NOW() - make_interval(days => $1)`, denmaVersionsDays)
+	res, err = db.ExecContext(ctx, `DELETE FROM denma_versions v WHERE v.campaign_id IS NULL
+		AND v.saved_at < NOW() - make_interval(days => $1)
+		AND (v.set_aside OR EXISTS (SELECT 1 FROM denma_versions w WHERE w.id > v.id AND NOT w.set_aside
+			AND w.template_id IS NOT DISTINCT FROM v.template_id AND w.automation_id IS NOT DISTINCT FROM v.automation_id))`, denmaVersionsDays)
 	if err != nil {
 		return n, err
 	}
