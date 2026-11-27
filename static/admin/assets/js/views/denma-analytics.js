@@ -135,7 +135,10 @@ function component(opts) {
       // Unsubscribes are counted from outcomes.since (cmd/denma_campaign_stats.go).
       const since = outcomes.since;
       const counted = (c) => since && new Date(c.started_at) >= since;
-      const complaints = (n, delivered) => (n > 0 ? metric(n, delivered, 2) : { pct: '0', n: '' });
+      // A complaint rate is over the e-mails to providers that report complaints, while they're recorded (cmd/denma_feedback.go).
+      const recorded = (c) => outcomes.feedbackFrom && new Date(c.started_at) >= outcomes.feedbackFrom;
+      const complaints = (n, of, known) => (n === 0 ? { pct: '0', n: '' } : { ...metric(n, of, 2), hint: known ? '' : s.COMPLAINT_REPORT_OLD });
+      const sum = { n: 0, of: 0, count: 0 };
 
       this.reports.rows = list.map((c) => {
         const out = outcomes.byId[c.id] || { bounces: 0, complaints: 0, unsubscribes: 0 };
@@ -148,6 +151,11 @@ function component(opts) {
         tot.bounces += bounces;
         tot.complaints += out.complaints;
         tot.delivered += delivered;
+        if (recorded(c)) {
+          sum.n += out.complaints;
+          sum.of += out.feedback_sends || 0;
+          sum.count += 1;
+        }
         if (tracked) {
           tot.trackedDelivered += delivered;
           tot.opens += o;
@@ -170,7 +178,7 @@ function component(opts) {
           cto: tracked && o > 0 ? pct(k, o, 1) : '—',
           unsub: metric(out.unsubscribes, delivered, 2, counted(c)),
           bounces: bounces.toLocaleString(),
-          complaint: complaints(out.complaints, delivered),
+          complaint: recorded(c) ? complaints(out.complaints, out.feedback_sends || 0, true) : complaints(out.complaints, delivered, false),
         };
       });
 
@@ -184,10 +192,12 @@ function component(opts) {
         cto: tracked && tot.opens > 0 ? pct(tot.clicks, tot.opens, 1) : '—',
         unsub: metric(tot.unsubs, tot.unsubDelivered, 2, tot.unsubDelivered > 0),
         bounces: tot.bounces.toLocaleString(),
-        complaint: complaints(tot.complaints, tot.delivered),
+        complaint: sum.count ? complaints(sum.n, sum.of, true) : complaints(tot.complaints, tot.delivered, false),
       } : null;
-      const early = since && list.some((c) => !counted(c));
-      this.reports.note = list.length ? 'Opens, clicks, unsubscribes and complaints are shares of delivered emails; opens and clicks count unique people per campaign. Click-to-open is the people who clicked, as a share of those who opened.' : '';
+      const old = list.some((c) => !recorded(c));
+      this.reports.note = list.length ? 'Opens, clicks and unsubscribes are shares of delivered emails; opens and clicks count unique people per campaign. Click-to-open is the people who clicked, as a share of those who opened. '
+        + "Complaints are a share of the e-mails to providers that report them to Amazon SES (Gmail doesn't)."
+        + (old ? ` A complaint rate marked * is a share of everything delivered (which providers an e-mail went to is kept for 90 days), so it can't be set against Amazon SES's 0.1%.${sum.count ? ' The total counts only the campaigns without it.' : ''}` : '') : '';
     },
 
     // ---- Automation reports ----
@@ -197,7 +207,9 @@ function component(opts) {
       const ind = d.individual_tracking;
       const off = d.tracking_disabled;
       const metric = (count, of, digits, shown = true) => (shown ? { pct: pct(count, of, digits), n: count.toLocaleString() } : null);
-      const complaints = (n, of) => (n > 0 ? metric(n, of, 2) : { pct: '0', n: '' });
+      // A complaint rate is over the e-mails to providers that report complaints, while they're recorded (cmd/denma_feedback.go).
+      const recorded = !!d.feedback_from && p.cur.start >= new Date(d.feedback_from);
+      const complaints = (n, of, known) => (n === 0 ? { pct: '0', n: '' } : { ...metric(n, of, 2), hint: known ? '' : s.COMPLAINT_REPORT_OLD });
       const figures = (r) => {
         const bounces = Math.min(r.bounces, r.sent);
         const delivered = r.sent - bounces;
@@ -215,7 +227,7 @@ function component(opts) {
           cto: !off && opened > 0 ? pct(clicked, opened, 1) : '—',
           unsub: metric(r.unsubscribes, r.people, 2),
           bounces: bounces.toLocaleString(),
-          complaint: complaints(r.complaints, r.people),
+          complaint: recorded ? complaints(r.complaints, r.feedback_sends, true) : complaints(r.complaints, r.people, false),
         };
       };
 
@@ -228,7 +240,7 @@ function component(opts) {
       });
       const focus = focusID();
       const list = [...groups.values()].filter((g) => g.total && g.total.sent > 0).sort((a, b) => b.total.sent - a.total.sent);
-      const tot = { sent: 0, people: 0, opened: 0, clicked: 0, opens: 0, clicks: 0, unsubscribes: 0, bounces: 0, complaints: 0 };
+      const tot = { sent: 0, people: 0, opened: 0, clicked: 0, opens: 0, clicks: 0, unsubscribes: 0, bounces: 0, complaints: 0, feedback_sends: 0 };
       this.autos.rows = list.map((g) => {
         Object.keys(tot).forEach((k) => { tot[k] += g.total[k]; });
         const steps = g.steps.filter((r) => r.sent > 0);
@@ -247,8 +259,11 @@ function component(opts) {
       const notes = [];
       if (list.length) {
         notes.push(ind
-          ? 'For the e-mails sent in this period: opens and clicks are the people who opened or clicked them, once each, and with unsubscribes and complaints, shares of the people they were sent to.'
+          ? 'For the e-mails sent in this period: opens and clicks are the people who opened or clicked them, once each, and with unsubscribes, shares of the people they were sent to. Complaints are a share of the e-mails to providers that report them to Amazon SES (Gmail doesn\'t).'
           : "Individual tracking is off, so opens and clicks aren't tied to people: they're every open and click in this period, as shares of the e-mails delivered.");
+        if (!recorded && this.autos.rows.some((g) => g.rows.some((r) => r.complaint && r.complaint.hint))) {
+          notes.push("A complaint rate marked * is a share of the people the e-mails went to (which providers an e-mail went to is kept for 90 days), so it can't be set against Amazon SES's 0.1%.");
+        }
         if (off) notes.push('Tracking is off, so there are no opens or clicks.');
         if (since('views')) notes.push(`Opens are counted from ${since('views')}.`);
         if (since('unsubs') || since('bounces')) notes.push(`Unsubscribes and bounces are counted from ${since('unsubs') || since('bounces')}.`);

@@ -116,15 +116,20 @@ export async function campaignPeople(ids, from) {
   return out;
 }
 
-// Campaigns' bounces, complaints and unsubscribes by ID, and since when unsubscribes are counted.
+// Campaigns' bounces, complaints and unsubscribes by ID, since when unsubscribes are counted, and from when
+// e-mails have their providers recorded (feedbackFrom).
 export async function campaignOutcomes(ids) {
   if (!ids.length) {
-    return { since: null, byId: {} };
+    return { since: null, feedbackFrom: null, byId: {} };
   }
   const d = await getJSON(`/denma/stats/campaigns?${ids.map((id) => `id=${id}`).join('&')}`);
   const byId = {};
   ((d && d.results) || []).forEach((r) => { byId[r.campaign_id] = r; });
-  return { since: d && d.unsubscribes_since ? new Date(d.unsubscribes_since) : null, byId };
+  return {
+    since: d && d.unsubscribes_since ? new Date(d.unsubscribes_since) : null,
+    feedbackFrom: d && d.feedback_from ? new Date(d.feedback_from) : null,
+    byId,
+  };
 }
 
 const sumValues = (m) => Object.values(m).reduce((n, v) => n + v, 0);
@@ -223,6 +228,9 @@ export const BOUNCE_METRICS = [
   ['complaintRate', 'Complaint rate', 'pct2', "Complaints as a share of emails to Outlook, Hotmail, Yahoo, AOL and Comcast, which report them (Gmail doesn't), as Amazon SES counts them. It should be under 0.1%.", [0.0005, 0.001]],
   ['gmailSpam', 'Gmail complaint rate', 'pct2', "Gmail users who reported the center's mail as spam, as a share of its mail in their inboxes, averaged over this period's days. Postmaster Tools can be 2 to 4 days behind. It should be under 0.1%.", [0.001, 0.003]],
 ];
+
+// Why a complaint rate in Campaign and Automation reports isn't set against SES's 0.1%.
+export const COMPLAINT_REPORT_OLD = "A share of everything delivered: which providers e-mails went to is kept for 90 days, so this can't be set against Amazon SES's 0.1%.";
 
 const COMPLAINT_HELP_SES = "Amazon SES's own complaint rate for the center's domain. It should be under 0.1%.";
 

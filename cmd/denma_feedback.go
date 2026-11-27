@@ -4,6 +4,7 @@ package main
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +70,13 @@ const denmaFeedbackSinceSQL = `LEAST((SELECT MIN(sent_at) FROM S.denma_messages)
 
 // denmaFeedbackComplaintsSQL counts the complaints from $1 to $2 since the record starts.
 const denmaFeedbackComplaintsSQL = `(SELECT COUNT(*) FROM S.bounces WHERE type = 'complaint' AND created_at >= GREATEST($1, ` + denmaFeedbackSinceSQL + `) AND created_at < $2)`
+
+// denmaFeedbackFromSQL is when e-mails sent from then on are all in the record, with their providers (NULL without a record).
+var denmaFeedbackFromSQL = func() string {
+	since := strings.ReplaceAll(denmaFeedbackSinceSQL, "S.", "")
+	return `CASE WHEN ` + since + ` IS NULL THEN NULL ELSE GREATEST(NOW() - make_interval(days => ` + strconv.Itoa(denmaMessageDays) +
+		`), ` + since + ` - INTERVAL '1 hour') END`
+}()
 
 // DenmaStatFeedback returns the e-mails sent to providers that report complaints, in a period and the one before.
 func (a *App) DenmaStatFeedback(c echo.Context) error {

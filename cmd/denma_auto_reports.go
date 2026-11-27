@@ -150,19 +150,21 @@ func denmaRecordBounce(db *sqlx.DB, b models.Bounce, record func(models.Bounce) 
 
 // denmaAutoReportRow is an automation's figures, or one of its e-mails' (Step > 0).
 type denmaAutoReportRow struct {
-	AutomationID int    `db:"automation_id" json:"automation_id"`
-	Step         int    `db:"step" json:"step"` // 0: the automation's total
-	Sent         int    `db:"sent" json:"sent"` // e-mails
-	People       int    `db:"people" json:"people"`
-	Opened       int    `db:"opened" json:"opened"`   // people (individual tracking)
-	Clicked      int    `db:"clicked" json:"clicked"` // people (individual tracking)
-	Opens        int    `db:"opens" json:"opens"`     // every open in the period
-	Clicks       int    `db:"clicks" json:"clicks"`   // every click in the period
-	Unsubs       int    `db:"unsubs" json:"unsubscribes"`
-	Bounces      int    `db:"bounces" json:"bounces"` // hard and soft
-	Complaints   int    `db:"complaints" json:"complaints"`
-	Name         string `db:"-" json:"name"`
-	Subject      string `db:"-" json:"subject"`
+	AutomationID int `db:"automation_id" json:"automation_id"`
+	Step         int `db:"step" json:"step"` // 0: the automation's total
+	Sent         int `db:"sent" json:"sent"` // e-mails
+	People       int `db:"people" json:"people"`
+	Opened       int `db:"opened" json:"opened"`   // people (individual tracking)
+	Clicked      int `db:"clicked" json:"clicked"` // people (individual tracking)
+	Opens        int `db:"opens" json:"opens"`     // every open in the period
+	Clicks       int `db:"clicks" json:"clicks"`   // every click in the period
+	Unsubs       int `db:"unsubs" json:"unsubscribes"`
+	Bounces      int `db:"bounces" json:"bounces"` // hard and soft
+	Complaints   int `db:"complaints" json:"complaints"`
+	// E-mails sent to providers that report complaints (cmd/denma_feedback.go).
+	FeedbackSends int    `db:"feedback_sends" json:"feedback_sends"`
+	Name          string `db:"-" json:"name"`
+	Subject       string `db:"-" json:"subject"`
 }
 
 // denmaAutoReportSQL is each automation's and e-mail's figures for e-mails sent from $1 to $2.
@@ -181,19 +183,22 @@ people AS (
     FROM sent s
 ),
 ev AS (
-    SELECT automation_id, step, subscriber_id, n, opened, clicked, 0 AS opens, 0 AS clicks, 0 AS unsubs, 0 AS bounces, 0 AS complaints FROM people
-    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 1, 0, 0, 0, 0 FROM denma_automation_views WHERE created_at >= $1 AND created_at < $2
-    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 0, 1, 0, 0, 0 FROM denma_automation_clicks WHERE created_at >= $1 AND created_at < $2
-    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 0, 0, 1, 0, 0 FROM denma_automation_unsubs
+    SELECT automation_id, step, subscriber_id, n, opened, clicked, 0 AS opens, 0 AS clicks, 0 AS unsubs, 0 AS bounces, 0 AS complaints, 0 AS fb FROM people
+    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 1, 0, 0, 0, 0, 0 FROM denma_automation_views WHERE created_at >= $1 AND created_at < $2
+    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 0, 1, 0, 0, 0, 0 FROM denma_automation_clicks WHERE created_at >= $1 AND created_at < $2
+    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 0, 0, 1, 0, 0, 0 FROM denma_automation_unsubs
         WHERE COALESCE(sent_at, created_at) >= $1 AND COALESCE(sent_at, created_at) < $2
-    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 0, 0, 0, (type <> 'complaint')::INT, (type = 'complaint')::INT FROM denma_automation_bounces
+    UNION ALL SELECT automation_id, step, NULL, 0, false, false, 0, 0, 0, (type <> 'complaint')::INT, (type = 'complaint')::INT, 0 FROM denma_automation_bounces
         WHERE COALESCE(sent_at, created_at) >= $1 AND COALESCE(sent_at, created_at) < $2
+    UNION ALL SELECT m.automation_id, m.step, NULL, 0, false, false, 0, 0, 0, 0, 0, 1 FROM denma_messages m
+        WHERE m.automation_id IS NOT NULL AND ` + denmaFeedbackSent + ` AND m.sent_at >= $1 AND m.sent_at < $2
 )
 SELECT automation_id, CASE WHEN GROUPING(step) = 1 THEN 0 ELSE COALESCE(step, -1) END AS step,
     SUM(n) AS sent, COUNT(DISTINCT subscriber_id) AS people,
     COUNT(DISTINCT subscriber_id) FILTER (WHERE opened) AS opened,
     COUNT(DISTINCT subscriber_id) FILTER (WHERE clicked) AS clicked,
-    SUM(opens) AS opens, SUM(clicks) AS clicks, SUM(unsubs) AS unsubs, SUM(bounces) AS bounces, SUM(complaints) AS complaints
+    SUM(opens) AS opens, SUM(clicks) AS clicks, SUM(unsubs) AS unsubs, SUM(bounces) AS bounces, SUM(complaints) AS complaints,
+    SUM(fb) AS feedback_sends
 FROM ev
 GROUP BY GROUPING SETS ((automation_id, step), (automation_id))
 ORDER BY automation_id, step`
@@ -214,7 +219,9 @@ func (a *App) DenmaAutomationReports(c echo.Context) error {
 		Individual bool                 `json:"individual_tracking"`
 		Disabled   bool                 `json:"tracking_disabled"`
 		Since      map[string]time.Time `json:"since"`
-		Results    []denmaAutoReportRow `json:"results"`
+		// E-mails sent from then on are all recorded with their providers.
+		FeedbackFrom *time.Time           `json:"feedback_from"`
+		Results      []denmaAutoReportRow `json:"results"`
 	}{Individual: a.cfg.Privacy.IndividualTracking, Disabled: a.cfg.Privacy.DisableTracking, Since: map[string]time.Time{}}
 
 	var since []struct {
@@ -228,6 +235,9 @@ func (a *App) DenmaAutomationReports(c echo.Context) error {
 		out.Since[strings.TrimPrefix(s.Stat, "automation_")] = s.Since
 	}
 
+	if err := a.db.Get(&out.FeedbackFrom, `SELECT `+denmaFeedbackFromSQL); err != nil {
+		return denmaInternal(err)
+	}
 	var rows []denmaAutoReportRow
 	if err := a.db.Select(&rows, denmaAutoReportSQL, t[0], t[1]); err != nil {
 		return denmaInternal(err)

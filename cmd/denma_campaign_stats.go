@@ -36,6 +36,8 @@ type denmaCampaignOutcome struct {
 	Bounces      int `db:"bounces" json:"bounces"` // hard and soft
 	Complaints   int `db:"complaints" json:"complaints"`
 	Unsubscribes int `db:"unsubscribes" json:"unsubscribes"`
+	// E-mails sent to providers that report complaints (cmd/denma_feedback.go).
+	FeedbackSends int `db:"feedback_sends" json:"feedback_sends"`
 }
 
 // DenmaCampaignOutcomes returns campaigns' bounces, complaints and unsubscribes.
@@ -50,16 +52,22 @@ func (a *App) DenmaCampaignOutcomes(c echo.Context) error {
 		}
 	}
 	out := struct {
-		UnsubsSince *time.Time             `json:"unsubscribes_since"`
-		Results     []denmaCampaignOutcome `json:"results"`
+		UnsubsSince *time.Time `json:"unsubscribes_since"`
+		// Campaigns started from then on have all their e-mails recorded.
+		FeedbackFrom *time.Time             `json:"feedback_from"`
+		Results      []denmaCampaignOutcome `json:"results"`
 	}{Results: []denmaCampaignOutcome{}}
 	if err := a.db.Get(&out.UnsubsSince, `SELECT (SELECT since FROM denma_stat_starts WHERE stat = 'campaign_unsubs')`); err != nil {
+		return denmaInternal(err)
+	}
+	if err := a.db.Get(&out.FeedbackFrom, `SELECT `+denmaFeedbackFromSQL); err != nil {
 		return denmaInternal(err)
 	}
 	if err := a.db.Select(&out.Results, `SELECT c.id AS campaign_id,
 		(SELECT COUNT(*) FROM bounces b WHERE b.campaign_id = c.id AND b.type <> 'complaint') AS bounces,
 		(SELECT COUNT(*) FROM bounces b WHERE b.campaign_id = c.id AND b.type = 'complaint') AS complaints,
-		(SELECT COUNT(*) FROM denma_campaign_unsubs u WHERE u.campaign_id = c.id) AS unsubscribes
+		(SELECT COUNT(*) FROM denma_campaign_unsubs u WHERE u.campaign_id = c.id) AS unsubscribes,
+		(SELECT COUNT(*) FROM denma_messages m WHERE m.campaign_id = c.id AND `+denmaFeedbackSent+`) AS feedback_sends
 		FROM campaigns c WHERE c.id = ANY($1) ORDER BY c.id`, pq.Array(ids)); err != nil {
 		return denmaInternal(err)
 	}

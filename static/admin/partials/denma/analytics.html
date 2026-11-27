@@ -24,7 +24,7 @@
 						<th class="num"><abbr title="The people who clicked, as a share of those who opened">Click-to-open</abbr></th>
 						<th class="num"><abbr title="People who unsubscribed from this campaign's e-mail">Unsubscribes</abbr></th>
 						<th class="num"><abbr title="Hard and soft bounces">Bounces</abbr></th>
-						<th class="num"><abbr title="People who marked it as spam. It should be under 0.1%.">Complaints</abbr></th>
+						<th class="num"><abbr title="People who marked it as spam, as a share of the e-mails to providers that report them to Amazon SES (Outlook, Hotmail, Yahoo, AOL, Comcast; Gmail doesn't). It should be under 0.1%.">Complaints</abbr></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -80,7 +80,7 @@
 						<th class="num"><abbr title="The people who clicked, as a share of those who opened">Click-to-open</abbr></th>
 						<th class="num"><abbr title="People who unsubscribed from this automation's e-mail">Unsubscribes</abbr></th>
 						<th class="num"><abbr title="Hard and soft bounces">Bounces</abbr></th>
-						<th class="num"><abbr title="People who marked it as spam. It should be under 0.1%.">Complaints</abbr></th>
+						<th class="num"><abbr title="People who marked it as spam, as a share of the e-mails to providers that report them to Amazon SES (Outlook, Hotmail, Yahoo, AOL, Comcast; Gmail doesn't). It should be under 0.1%.">Complaints</abbr></th>
 					</tr>
 				</thead>
 				<template x-for="g in autos.rows" :key="g.id">
@@ -243,7 +243,7 @@
 {{/* A rate with its count beside it ({ pct, n }), or "—"; the argument is the Alpine expression. */}}
 {{ define "denma-rate-cell" }}
 <td class="num">
-	<template x-if="{{ . }}"><span><strong x-text="({{ . }}).pct"></strong> <span class="denma-sub" x-text="({{ . }}).n"></span></span></template>
+	<template x-if="{{ . }}"><span><strong x-text="({{ . }}).pct"></strong> <span class="denma-sub" x-text="({{ . }}).n"></span><template x-if="({{ . }}).hint"><abbr :title="({{ . }}).hint">*</abbr></template></span></template>
 	<template x-if="!({{ . }})"><span>—</span></template>
 </td>
 {{ end }}
