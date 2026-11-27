@@ -285,6 +285,7 @@ type denmaExplore struct {
 	ComplaintsMax  int                     `json:"-"`
 	ComplaintsWho  bool                    `json:"-"` // names and addresses shown
 	Zone           *time.Location          `json:"-"`
+	TimeZone       string                  `json:"time_zone"` // the zone's name, for the charts' days
 }
 
 // denmaExploreCountSQL counts a table's rows per automation and bucket, as get-campaign-view-counts does.
@@ -294,7 +295,7 @@ func denmaExploreCountSQL(table string, distinct bool) string {
 		count = "COUNT(DISTINCT subscriber_id)"
 	}
 	return `SELECT automation_id, ` + count + ` AS "count",
-        DATE_TRUNC(CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END, created_at) AS "timestamp"
+        ` + denmaExploreBucket("$4") + ` AS "timestamp"
     FROM ` + table + ` WHERE automation_id = ANY($1) AND created_at >= $2 AND created_at <= $3
     GROUP BY automation_id, "timestamp" ORDER BY "timestamp"`
 }
@@ -321,8 +322,8 @@ func (a *App) denmaExploreAutomations(c echo.Context, v *campaignAnalyticsView, 
 		ids = append(ids, au.ID)
 	}
 	var (
-		fromStr = from.Format("2006-01-02 15:04:05")
-		toStr   = to.Format("2006-01-02 15:04:05")
+		fromStr = from.Format(denmaAnalyticsStamp)
+		toStr   = to.Format(denmaAnalyticsStamp)
 		ind     = a.cfg.Privacy.IndividualTracking
 		d       = &v.Denma
 	)
@@ -336,7 +337,7 @@ func (a *App) denmaExploreAutomations(c echo.Context, v *campaignAnalyticsView, 
 		{&d.Bounces, denmaExploreCountSQL("denma_automation_bounces", false), &v.Counts.Bounces},
 	} {
 		*q.dst = []denmaExploreCount{}
-		if err := a.db.Select(q.dst, q.sql, pq.Array(ids), fromStr, toStr); err != nil {
+		if err := a.db.Select(q.dst, q.sql, pq.Array(ids), fromStr, toStr, a.denmaTimeZone().String()); err != nil {
 			return err
 		}
 		for _, r := range *q.dst {

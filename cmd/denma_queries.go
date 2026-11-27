@@ -43,10 +43,10 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=NOW()
 
 	// Unique views and clicks are people's, not the anonymous ones.
 	"get-campaign-analytics-unique-counts": `WITH intval AS (
-    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
+    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMPTZ - $2::TIMESTAMPTZ)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
 ),
 uniqIDs AS (
-    SELECT DISTINCT ON(subscriber_id, campaign_id) subscriber_id, campaign_id, DATE_TRUNC((SELECT * FROM intval), created_at) AS "timestamp"
+    SELECT DISTINCT ON(subscriber_id, campaign_id) subscriber_id, campaign_id, DATE_TRUNC((SELECT * FROM intval), created_at, $4) AS "timestamp"
     FROM %s
     WHERE campaign_id=ANY($1) AND created_at >= $2 AND created_at <= $3 AND subscriber_id IS NOT NULL
     ORDER BY subscriber_id, campaign_id, "timestamp"

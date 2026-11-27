@@ -64,12 +64,13 @@ func (a *App) ViewCampaignAnalytics(c echo.Context) error {
 	}
 
 	// Resolve the date range, defaulting to the last 7 days.
-	to := time.Now()
+	loc := a.denmaTimeZone() // denma: the range and its days are the center's (cmd/denma_explore_bounces.go)
+	to := time.Now().In(loc)
 	from := to.AddDate(0, 0, -7)
-	if t, ok := parseAnalyticsDate(c.QueryParam("from")); ok {
+	if t, ok := parseAnalyticsDate(c.QueryParam("from"), loc); ok {
 		from = t
 	}
-	if t, ok := parseAnalyticsDate(c.QueryParam("to")); ok {
+	if t, ok := parseAnalyticsDate(c.QueryParam("to"), loc); ok {
 		to = t
 	}
 
@@ -85,25 +86,26 @@ func (a *App) ViewCampaignAnalytics(c echo.Context) error {
 	// Pull analytics for the selected campaigns.
 	if len(campaigns) > 0 {
 		var (
-			fromStr = from.Format("2006-01-02 15:04:05")
-			toStr   = to.Format("2006-01-02 15:04:05")
+			fromStr = from.Format(denmaAnalyticsStamp) // denma: with the zone's offset
+			toStr   = to.Format(denmaAnalyticsStamp)
+			tz      = loc.String()
 			ids     = make([]int, len(campaigns))
 		)
 		for i, camp := range campaigns {
 			ids[i] = camp.ID
 		}
 
-		views, err := a.core.GetCampaignAnalyticsCounts(ids, "views", fromStr, toStr)
+		views, err := a.core.GetCampaignAnalyticsCounts(ids, "views", fromStr, toStr, tz)
 		if err != nil {
 			return err
 		}
 
-		clicks, err := a.core.GetCampaignAnalyticsCounts(ids, "clicks", fromStr, toStr)
+		clicks, err := a.core.GetCampaignAnalyticsCounts(ids, "clicks", fromStr, toStr, tz)
 		if err != nil {
 			return err
 		}
 
-		bounces, err := a.core.GetCampaignAnalyticsCounts(ids, "bounces", fromStr, toStr)
+		bounces, err := a.core.GetCampaignAnalyticsCounts(ids, "bounces", fromStr, toStr, tz)
 		if err != nil {
 			return err
 		}
@@ -169,7 +171,7 @@ func (a *App) GetCampaignViewAnalytics(c echo.Context) error {
 	}
 
 	// Get the analytics numbers from the DB for the campaigns.
-	out, err := a.core.GetCampaignAnalyticsCounts(ids, typ, from, to)
+	out, err := a.core.GetCampaignAnalyticsCounts(ids, typ, from, to, a.denmaTimeZone().String()) // denma: days in the center's time zone
 	if err != nil {
 		return err
 	}
@@ -178,7 +180,7 @@ func (a *App) GetCampaignViewAnalytics(c echo.Context) error {
 }
 
 // parseAnalyticsDate parses a `datetime-local` form value (with or without seconds).
-func parseAnalyticsDate(s string) (time.Time, bool) {
+func parseAnalyticsDate(s string, loc *time.Location) (time.Time, bool) { // denma: loc is the form values' zone
 	if s == "" {
 		return time.Time{}, false
 	}
@@ -192,7 +194,7 @@ func parseAnalyticsDate(s string) (time.Time, bool) {
 	default:
 		return time.Time{}, false
 	}
-	t, err := time.ParseInLocation(layout, s, time.Local)
+	t, err := time.ParseInLocation(layout, s, loc)
 
 	return t, err == nil
 }

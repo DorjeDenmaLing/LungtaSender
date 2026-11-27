@@ -266,9 +266,10 @@ SELECT COUNT(*) AS "count", campaign_id, "timestamp"
 -- raw: true
 WITH intval AS (
     -- For intervals < a week, aggregate counts hourly, otherwise daily.
-    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
+    -- denma. In time zone $4 (the center's), the range with its offset.
+    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMPTZ - $2::TIMESTAMPTZ)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
 )
-SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), created_at) AS "timestamp"
+SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), created_at, $4) AS "timestamp"
     FROM %s
     WHERE campaign_id=ANY($1) AND created_at >= $2 AND created_at <= $3
     GROUP BY campaign_id, "timestamp" ORDER BY "timestamp" ASC;
@@ -276,9 +277,10 @@ SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), crea
 -- name: get-campaign-bounce-counts
 WITH intval AS (
     -- For intervals < a week, aggregate counts hourly, otherwise daily.
-    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
+    -- denma. In time zone $4 (the center's), the range with its offset.
+    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMPTZ - $2::TIMESTAMPTZ)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
 )
-SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), created_at) AS "timestamp"
+SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), created_at, $4) AS "timestamp"
     FROM bounces
     WHERE campaign_id=ANY($1) AND created_at >= $2 AND created_at <= $3
     GROUP BY campaign_id, "timestamp" ORDER BY "timestamp" ASC;

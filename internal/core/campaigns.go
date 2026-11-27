@@ -381,7 +381,7 @@ func (c *Core) GetRunningCampaignStats() ([]models.CampaignStats, error) {
 	return out, nil
 }
 
-func (c *Core) GetCampaignAnalyticsCounts(campIDs []int, typ, fromDate, toDate string) ([]models.CampaignAnalyticsCount, error) {
+func (c *Core) GetCampaignAnalyticsCounts(campIDs []int, typ, fromDate, toDate, tz string) ([]models.CampaignAnalyticsCount, error) { // denma: tz counts days and hours
 	// Pick campaign view counts or click counts.
 	var stmt *sqlx.Stmt
 	switch typ {
@@ -400,7 +400,7 @@ func (c *Core) GetCampaignAnalyticsCounts(campIDs []int, typ, fromDate, toDate s
 	}
 
 	out := []models.CampaignAnalyticsCount{}
-	if err := stmt.Select(&out, pq.Array(campIDs), fromDate, toDate); err != nil {
+	if err := stmt.Select(&out, pq.Array(campIDs), fromDate, toDate, tz); err != nil {
 		c.log.Printf("error fetching campaign %s: %v", typ, err)
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.analytics}", "error", pqErrMsg(err)))

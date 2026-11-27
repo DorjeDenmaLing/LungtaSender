@@ -38,7 +38,13 @@ func (c denmaExploreComplaint) Time(loc *time.Location) string {
 
 const denmaExploreComplaintsMax = 500
 
-const denmaExploreBucketSQL = `DATE_TRUNC(CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END, created_at)`
+// denmaAnalyticsStamp writes Explore's range for a query, with its offset.
+const denmaAnalyticsStamp = "2006-01-02 15:04:05-07:00"
+
+// denmaExploreBucket is created_at's day (a range of 7 days or more) or hour, in the time zone of parameter tz.
+func denmaExploreBucket(tz string) string {
+	return `DATE_TRUNC(CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMPTZ - $2::TIMESTAMPTZ)) / 86400) >= 7 THEN 'day' ELSE 'hour' END, created_at, ` + tz + `)`
+}
 
 // denmaExploreBounces gives Explore its campaigns' and automations' bounces by type, and their complaints apart.
 func (a *App) denmaExploreBounces(v *campaignAnalyticsView, from, to time.Time) error {
@@ -47,6 +53,7 @@ func (a *App) denmaExploreBounces(v *campaignAnalyticsView, from, to time.Time) 
 	d.ComplaintsWho = v.Can("bounces:get") && v.DenmaAllLists()
 	d.ComplaintsMax = denmaExploreComplaintsMax
 	d.Zone = a.denmaTimeZone()
+	d.TimeZone = d.Zone.String()
 	camps := make([]int, len(v.Campaigns))
 	for i, cm := range v.Campaigns {
 		camps[i] = cm.ID
@@ -59,16 +66,16 @@ func (a *App) denmaExploreBounces(v *campaignAnalyticsView, from, to time.Time) 
 		return nil
 	}
 	var (
-		fromStr = from.Format("2006-01-02 15:04:05")
-		toStr   = to.Format("2006-01-02 15:04:05")
+		fromStr = from.Format(denmaAnalyticsStamp)
+		toStr   = to.Format(denmaAnalyticsStamp)
 	)
 	if err := a.db.Select(&d.TypedBounces, `
-		SELECT campaign_id, 0 AS automation_id, type::TEXT AS type, COUNT(*) AS count, `+denmaExploreBucketSQL+` AS timestamp
+		SELECT campaign_id, 0 AS automation_id, type::TEXT AS type, COUNT(*) AS count, `+denmaExploreBucket("$5")+` AS timestamp
 		FROM bounces WHERE campaign_id = ANY($1) AND type <> 'complaint' AND created_at >= $2 AND created_at <= $3 GROUP BY 1, 3, 5
 		UNION ALL
-		SELECT 0, automation_id, type, COUNT(*), `+denmaExploreBucketSQL+`
+		SELECT 0, automation_id, type, COUNT(*), `+denmaExploreBucket("$5")+`
 		FROM denma_automation_bounces WHERE automation_id = ANY($4) AND type <> 'complaint' AND created_at >= $2 AND created_at <= $3 GROUP BY 2, 3, 5
-		ORDER BY timestamp`, pq.Array(camps), fromStr, toStr, pq.Array(autos)); err != nil {
+		ORDER BY timestamp`, pq.Array(camps), fromStr, toStr, pq.Array(autos), d.TimeZone); err != nil {
 		return denmaInternal(err)
 	}
 	if err := a.db.Select(&d.Complaints, `
